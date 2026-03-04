@@ -64,7 +64,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.7",
+            sw_version="1.0.8",
         )
 
     async def async_added_to_hass(self):
@@ -405,7 +405,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.7",
+            sw_version="1.0.8",
         )
 
     @property
