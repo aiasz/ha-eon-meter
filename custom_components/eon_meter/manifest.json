@@ -1,11 +1,12 @@
 {
   "domain": "eon_meter",
   "name": "E.ON Meter Data",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "documentation": "https://github.com/Aiasz/ha-eon-meter",
   "issue_tracker": "https://github.com/Aiasz/ha-eon-meter/issues",
   "requirements": [
-    "openpyxl==3.1.2"
+    "openpyxl==3.1.2",
+    "tnefparse>=1.4.0"
   ],
   "dependencies": [],
   "codeowners": ["@Aiasz"],

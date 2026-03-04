@@ -9,6 +9,24 @@ import openpyxl
 
 _LOGGER = logging.getLogger(__name__)
 
+def _try_extract_from_winmail(data: bytes):
+    """Try to extract xlsx files from a winmail.dat (TNEF) attachment."""
+    try:
+        import tnefparse
+        tnef = tnefparse.TNEF(data)
+        for attachment in tnef.attachments:
+            name = getattr(attachment, "name", "") or ""
+            if isinstance(name, bytes):
+                name = name.decode("utf-8", errors="replace")
+            if name.lower().endswith(".xlsx") or name.lower().endswith(".xls"):
+                _LOGGER.info(f"Extracted '{name}' from winmail.dat (TNEF)")
+                return io.BytesIO(attachment.data)
+    except ImportError:
+        _LOGGER.warning("tnefparse not installed. Cannot decode winmail.dat. Run: pip install tnefparse")
+    except Exception as e:
+        _LOGGER.warning(f"winmail.dat extraction failed: {e}")
+    return None
+
 def _decode_str(s):
     """Decode email header string."""
     try:
@@ -100,6 +118,24 @@ def fetch_from_email(host, port, user, password, subject_filter):
                 if not filename: continue
                 filename = _decode_str(filename)
                 
+                # Handle winmail.dat (Microsoft TNEF format)
+                if filename.lower() == "winmail.dat":
+                    _LOGGER.info("Found winmail.dat - attempting TNEF extraction for xlsx")
+                    try:
+                        file_data = part.get_payload(decode=True)
+                        excel_file = _try_extract_from_winmail(file_data)
+                        if excel_file:
+                            excel_rows = _parse_excel(excel_file)
+                            if excel_rows:
+                                rows.extend(excel_rows)
+                                found_attachment = True
+                                break
+                        else:
+                            _LOGGER.warning("winmail.dat did not contain a recognizable xlsx file.")
+                    except Exception as e:
+                        _LOGGER.error(f"Error processing winmail.dat: {e}")
+                    continue
+
                 if filename.lower().endswith(".xlsx") or filename.lower().endswith(".xls"):
                     _LOGGER.info(f"Found attachment: {filename}")
                     try:
