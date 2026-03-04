@@ -1,0 +1,5 @@
+# .gitignore for ha-eon-meter
+__pycache__/
+*.py[cod]
+*.pycache
+.DS_Store
