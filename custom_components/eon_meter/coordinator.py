@@ -8,19 +8,21 @@ import async_timeout
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 
 from .const import DOMAIN, MODE_API, MODE_EMAIL, MODE_BOTH, CONF_URL, CONF_TOKEN, CONF_IMAP_HOST, CONF_IMAP_PORT, CONF_IMAP_USER, CONF_IMAP_PASS, CONF_EMAIL_SUBJECT, CONF_SCAN_INTERVAL, CONF_DATA_SOURCE
 from .imap_client import fetch_from_email
 
 _LOGGER = logging.getLogger(__name__)
+STORAGE_VERSION = 1
 
 class EonDataUpdateCoordinator(DataUpdateCoordinator):
     """Class to manage fetching E.ON data from API and/or Email."""
 
-    def __init__(self, hass: HomeAssistant, config: Dict[str, Any]):
+    def __init__(self, hass: HomeAssistant, config: Dict[str, Any], entry_id: str = "default"):
         """Initialize."""
         self.config = config
-        self.mode = config.get(CONF_DATA_SOURCE, MODE_EMAIL) # Default to email if missing
+        self.mode = config.get(CONF_DATA_SOURCE, MODE_EMAIL)
         
         # API config
         self.api_url = config.get(CONF_URL, "").rstrip("/")
@@ -35,8 +37,11 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
         
         scan_interval = config.get(CONF_SCAN_INTERVAL, 3600)
 
-        # Buffer to store historical data points to handle backfill and accumulation
-        self._data_buffer = {} 
+        # Persistent storage (survives HA restarts)
+        self._store = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}.buffer")
+
+        # In-memory buffer (loaded from storage on startup)
+        self._data_buffer: Dict[int, Dict] = {}
 
         # Diagnostics property for easy sensor representation
         self.sync_info = {
@@ -53,6 +58,21 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=timedelta(seconds=scan_interval),
         )
+
+    async def async_load_buffer(self) -> None:
+        """Load persisted data buffer from HA storage."""
+        stored = await self._store.async_load()
+        if stored and isinstance(stored, dict):
+            # Keys are stored as strings in JSON, convert back to int
+            self._data_buffer = {int(k): v for k, v in stored.items()}
+            _LOGGER.info(f"Loaded {len(self._data_buffer)} rows from persistent storage.")
+        else:
+            self._data_buffer = {}
+
+    async def async_save_buffer(self) -> None:
+        """Save data buffer to HA storage."""
+        # JSON keys must be strings
+        await self._store.async_save({str(k): v for k, v in self._data_buffer.items()})
 
     async def _async_update_data(self) -> List[Dict[str, Any]]:
         """Fetch data from configured source(s)."""
@@ -176,6 +196,10 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
                 
                 _LOGGER.debug(f"Fetched & Merged {len(final_rows)} rows (Buffer Size: {len(self._data_buffer)})")
                 self.sync_info["buffer_size"] = len(self._data_buffer)
+
+                # Persist the buffer so it survives HA restarts
+                await self.async_save_buffer()
+
                 return final_rows
 
         except UpdateFailed:

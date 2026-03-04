@@ -36,7 +36,7 @@ class EonUpdateButton(ButtonEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.4",
+            sw_version="1.0.6",
         )
 
     async def async_press(self) -> None:
