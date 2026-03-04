@@ -1,0 +1,13 @@
+{
+  "domain": "eon_meter",
+  "name": "E.ON Meter Data",
+  "version": "1.0.0",
+  "documentation": "https://github.com/Aiasz/ha-eon-meter",
+  "issue_tracker": "https://github.com/Aiasz/ha-eon-meter/issues",
+  "requirements": [
+    "openpyxl==3.1.2"
+  ],
+  "dependencies": [],
+  "codeowners": ["@Aiasz"],
+  "iot_class": "local_polling"
+}

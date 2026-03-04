@@ -1,0 +1,6 @@
+{
+  "name": "E.ON Meter Data",
+  "render_readme": true,
+  "file_name": "eon_meter",
+  "iot_class": "Local Polling"
+}
