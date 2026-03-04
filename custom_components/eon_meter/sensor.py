@@ -64,7 +64,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.9",
+            sw_version="1.0.10",
         )
 
     async def async_added_to_hass(self):
@@ -178,27 +178,50 @@ class EonTotalSensor(EonBaseSensor):
         """Inject hourly statistics into HA recorder tied to this sensor entity."""
         try:
             from homeassistant.components.recorder import get_instance
-            from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
-            from homeassistant.components.recorder.statistics import async_import_statistics
+            from homeassistant.components.recorder.statistics import (
+                async_import_statistics,
+                StatisticData,
+                StatisticMetaData,
+            )
         except ImportError:
-            _LOGGER.warning("Recorder not available — skipping statistics injection")
+            try:
+                from homeassistant.components.recorder import get_instance
+                from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+                from homeassistant.components.recorder.statistics import async_import_statistics
+            except ImportError:
+                _LOGGER.warning("Recorder not available — skipping statistics injection for %s", self.entity_id)
+                return
+
+        entity_id = self.entity_id
+        if not entity_id:
+            _LOGGER.warning("entity_id not yet available for statistics injection, skipping")
             return
 
         hourly: dict = {}
+        skipped = 0
         for row in rows:
             ts_str = row.get("Timestamp", "")
             if not ts_str.startswith("/Date("):
+                skipped += 1
                 continue
             try:
                 ts_ms = int(ts_str[6:-2])
                 dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
                 hour_dt = dt.replace(minute=0, second=0, microsecond=0)
-            except Exception:
+            except Exception as e:
+                _LOGGER.debug("Skipping row with bad timestamp: %s — %s", ts_str, e)
+                skipped += 1
                 continue
             val = self._get_val(row, self._data_key)
             hourly[hour_dt] = hourly.get(hour_dt, 0.0) + val
 
+        _LOGGER.info(
+            "Statistics injection for %s: %d hourly buckets built, %d rows skipped",
+            entity_id, len(hourly), skipped,
+        )
+
         if not hourly:
+            _LOGGER.warning("No valid hourly buckets for %s — nothing injected", entity_id)
             return
 
         sorted_hours = sorted(hourly.keys())
@@ -216,8 +239,8 @@ class EonTotalSensor(EonBaseSensor):
             has_mean=False,
             has_sum=True,
             name=self.name,
-            source="recorder",           # KEY: tied to the actual sensor entity (ZsBT módszer)
-            statistic_id=self.entity_id, # e.g. "sensor.eon_meter_import_total"
+            source="recorder",           # ties to the actual sensor entity (ZsBT módszer)
+            statistic_id=entity_id,      # e.g. "sensor.e_on_meter_import_total"
             unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
         )
 
@@ -227,12 +250,15 @@ class EonTotalSensor(EonBaseSensor):
                 lambda: async_import_statistics(self.hass, meta, stats)
             )
             _LOGGER.info(
-                "Injected %d hourly statistics for %s into HA recorder",
+                "✅ Injected %d hourly statistics for %s (%.4f kWh cumulative, range: %s → %s)",
                 len(stats),
-                self.entity_id,
+                entity_id,
+                cumulative,
+                sorted_hours[0].strftime("%Y-%m-%d %H:%M"),
+                sorted_hours[-1].strftime("%Y-%m-%d %H:%M"),
             )
         except Exception as exc:
-            _LOGGER.warning("Statistics injection failed for %s: %s", self.entity_id, exc)
+            _LOGGER.error("❌ Statistics injection FAILED for %s: %s", entity_id, exc)
 
 
 class EonDailySensor(EonBaseSensor):
@@ -470,7 +496,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.9",
+            sw_version="1.0.10",
         )
 
     @property
