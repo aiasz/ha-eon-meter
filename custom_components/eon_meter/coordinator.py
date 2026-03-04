@@ -200,9 +200,6 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
                 # Persist the buffer so it survives HA restarts
                 await self.async_save_buffer()
 
-                # Inject historical statistics into HA recorder for graph/Energy Dashboard
-                await self._async_inject_statistics(final_rows)
-
                 return final_rows
 
         except UpdateFailed:
@@ -217,92 +214,7 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
         self.sync_info["last_sync"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.sync_info["rows_fetched"] = fetched
 
-    async def _async_inject_statistics(self, rows: List[Dict]) -> None:
-        """Inject historical energy statistics into HA recorder so graphs show past data."""
-        try:
-            from homeassistant.components.recorder import get_instance
-            from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
-            from homeassistant.components.recorder.statistics import async_add_external_statistics
-            from homeassistant.const import UnitOfEnergy
-        except ImportError:
-            _LOGGER.warning("Recorder not available - skipping historical statistics injection")
-            return
 
-        if not rows:
-            return
-
-        # Group 15-min rows into hourly buckets for statistics (HA requires hourly granularity)
-        # For each column (Num1=import, Num2=export) - sum each hour's 4x 15min values
-        hourly_import: Dict[datetime, float] = {}
-        hourly_export: Dict[datetime, float] = {}
-
-        for row in rows:
-            ts_str = row.get("Timestamp", "")
-            if not ts_str.startswith("/Date("):
-                continue
-            try:
-                ts_ms = int(ts_str[6:-2])
-                dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
-                # Truncate to whole hour
-                hour_dt = dt.replace(minute=0, second=0, microsecond=0)
-            except Exception:
-                continue
-
-            n1 = float(row.get("Num1", 0) or 0)
-            n2 = float(row.get("Num2", 0) or 0)
-            hourly_import[hour_dt] = hourly_import.get(hour_dt, 0.0) + n1
-            hourly_export[hour_dt] = hourly_export.get(hour_dt, 0.0) + n2
-
-        if not hourly_import:
-            return
-
-        # Build cumulative sum statistics (required by HA energy stats)
-        sorted_hours = sorted(hourly_import.keys())
-        import_stats = []
-        export_stats = []
-        cumulative_import = 0.0
-        cumulative_export = 0.0
-
-        for hour_dt in sorted_hours:
-            cumulative_import += hourly_import.get(hour_dt, 0.0)
-            cumulative_export += hourly_export.get(hour_dt, 0.0)
-
-            import_stats.append(StatisticData(
-                start=hour_dt,
-                sum=round(cumulative_import, 4),
-                state=round(hourly_import.get(hour_dt, 0.0), 4),
-            ))
-            export_stats.append(StatisticData(
-                start=hour_dt,
-                sum=round(cumulative_export, 4),
-                state=round(hourly_export.get(hour_dt, 0.0), 4),
-            ))
-
-        import_meta = StatisticMetaData(
-            has_mean=False,
-            has_sum=True,
-            name="E.ON Import (+A)",
-            source=DOMAIN,
-            statistic_id=f"{DOMAIN}:import_kwh",
-            unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        )
-        export_meta = StatisticMetaData(
-            has_mean=False,
-            has_sum=True,
-            name="E.ON Export (-A)",
-            source=DOMAIN,
-            statistic_id=f"{DOMAIN}:export_kwh",
-            unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
-        )
-
-        instance = get_instance(self.hass)
-        await instance.async_add_executor_job(
-            lambda: async_add_external_statistics(self.hass, import_meta, import_stats)
-        )
-        await instance.async_add_executor_job(
-            lambda: async_add_external_statistics(self.hass, export_meta, export_stats)
-        )
-        _LOGGER.info(f"Injected {len(import_stats)} hourly statistics records into HA recorder")
 
     async def _fetch_api(self) -> List[Dict[str, Any]]:
         session = async_get_clientsession(self.hass)

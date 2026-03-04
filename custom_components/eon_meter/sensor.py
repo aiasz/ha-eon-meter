@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 
 from homeassistant.components.sensor import (
@@ -64,7 +64,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.8",
+            sw_version="1.0.9",
         )
 
     async def async_added_to_hass(self):
@@ -168,6 +168,71 @@ class EonTotalSensor(EonBaseSensor):
         
         self._attr_native_value = total
         self.async_write_ha_state()
+
+        # Inject historical statistics so graphs/Energy Dashboard show past data
+        # Uses source='recorder' + self.entity_id (ZsBT/hass-w1000-portal method)
+        if self.entity_id:
+            self.hass.async_create_task(self._inject_statistics(rows))
+
+    async def _inject_statistics(self, rows) -> None:
+        """Inject hourly statistics into HA recorder tied to this sensor entity."""
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+            from homeassistant.components.recorder.statistics import async_import_statistics
+        except ImportError:
+            _LOGGER.warning("Recorder not available — skipping statistics injection")
+            return
+
+        hourly: dict = {}
+        for row in rows:
+            ts_str = row.get("Timestamp", "")
+            if not ts_str.startswith("/Date("):
+                continue
+            try:
+                ts_ms = int(ts_str[6:-2])
+                dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+                hour_dt = dt.replace(minute=0, second=0, microsecond=0)
+            except Exception:
+                continue
+            val = self._get_val(row, self._data_key)
+            hourly[hour_dt] = hourly.get(hour_dt, 0.0) + val
+
+        if not hourly:
+            return
+
+        sorted_hours = sorted(hourly.keys())
+        stats = []
+        cumulative = 0.0
+        for hour_dt in sorted_hours:
+            cumulative += hourly[hour_dt]
+            stats.append(StatisticData(
+                start=hour_dt,
+                state=round(hourly[hour_dt], 4),
+                sum=round(cumulative, 4),
+            ))
+
+        meta = StatisticMetaData(
+            has_mean=False,
+            has_sum=True,
+            name=self.name,
+            source="recorder",           # KEY: tied to the actual sensor entity (ZsBT módszer)
+            statistic_id=self.entity_id, # e.g. "sensor.eon_meter_import_total"
+            unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        )
+
+        try:
+            instance = get_instance(self.hass)
+            await instance.async_add_executor_job(
+                lambda: async_import_statistics(self.hass, meta, stats)
+            )
+            _LOGGER.info(
+                "Injected %d hourly statistics for %s into HA recorder",
+                len(stats),
+                self.entity_id,
+            )
+        except Exception as exc:
+            _LOGGER.warning("Statistics injection failed for %s: %s", self.entity_id, exc)
 
 
 class EonDailySensor(EonBaseSensor):
@@ -405,7 +470,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.8",
+            sw_version="1.0.9",
         )
 
     @property
