@@ -19,8 +19,6 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     entities = [
-        EonIntervalSensor(coordinator, "Num1", "Import 15min (+A)"),
-        EonIntervalSensor(coordinator, "Num2", "Export 15min (-A)"),
         EonTotalSensor(coordinator, "import", "Num1", "Import Total"),
         EonTotalSensor(coordinator, "export", "Num2", "Export Total"),
         EonDailySensor(coordinator, "import", "Num1", "Import Daily"),
@@ -29,6 +27,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         EonWeeklySensor(coordinator, "export", "Num2", "Export Weekly"),
         EonMonthlySensor(coordinator, "import", "Num1", "Import Monthly"),
         EonMonthlySensor(coordinator, "export", "Num2", "Export Monthly"),
+        EonNetBalanceSensor(coordinator, "Napi Netto Egyenleg"),
         EonOutageSensor(coordinator, "Last Outage"),
         EonStatusSensor(coordinator, "API/IMAP Status"),
     ]
@@ -64,7 +63,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.10",
+            sw_version="1.0.11",
         )
 
     async def async_added_to_hass(self):
@@ -102,37 +101,6 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             return float(row.get(key, 0))
         except ValueError:
             return 0.0
-
-class EonIntervalSensor(EonBaseSensor):
-    """Sensor for the exact 15-minute interval raw values (+A / -A)."""
-    
-    def __init__(self, coordinator, data_key, name):
-        super().__init__(coordinator, name)
-        self._data_key = data_key
-        self._attr_device_class = SensorDeviceClass.ENERGY
-        self._attr_state_class = SensorStateClass.MEASUREMENT
-        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-
-    @property
-    def extra_state_attributes(self):
-        attrs = super().extra_state_attributes
-        if self.coordinator.data and len(self.coordinator.data) > 0:
-            last_row = self.coordinator.data[-1]
-            for key, val in last_row.items():
-                if key not in ["Timestamp", "Datum", "Pod", "Num1", "Num2"]:
-                    attrs[key] = val
-        return attrs
-
-    def _handle_coordinator_update(self) -> None:
-        rows = self.coordinator.data
-        if not rows:
-            return
-            
-        # Get the very last raw timestamp and value from the payload
-        last_row = rows[-1]
-        self._last_ts = self._parse_timestamp(last_row)
-        self._attr_native_value = self._get_val(last_row, self._data_key)
-        self.async_write_ha_state()
 
 class EonTotalSensor(EonBaseSensor):
     """Sensor for cumulative total (Import/Export)."""
@@ -410,6 +378,58 @@ class EonMonthlySensor(EonBaseSensor):
         self.async_write_ha_state()
 
 
+class EonNetBalanceSensor(EonBaseSensor):
+    """Napi nettó egyenleg: Import - Export az adott napra (bufferből számolva)."""
+
+    def __init__(self, coordinator, name):
+        super().__init__(coordinator, name)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_icon = "mdi:scale-balance"
+        self._current_day_str = None
+        self._daily_import = 0.0
+        self._daily_export = 0.0
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state and "current_day_str" in last_state.attributes:
+            self._current_day_str = last_state.attributes["current_day_str"]
+
+    @property
+    def extra_state_attributes(self):
+        attrs = super().extra_state_attributes
+        attrs["current_day_str"] = self._current_day_str
+        attrs["daily_import_kwh"] = round(self._daily_import, 4)
+        attrs["daily_export_kwh"] = round(self._daily_export, 4)
+        attrs["balance"] = "Fogyasztás" if self._attr_native_value >= 0 else "Visszatáplálás"
+        return attrs
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+
+        last_row = rows[-1]
+        current_day = last_row.get("Datum")
+        if not current_day:
+            return
+
+        daily_import = 0.0
+        daily_export = 0.0
+        for row in rows:
+            if row.get("Datum") == current_day:
+                daily_import += self._get_val(row, "Num1")
+                daily_export += self._get_val(row, "Num2")
+
+        self._daily_import = daily_import
+        self._daily_export = daily_export
+        self._current_day_str = current_day
+        self._attr_native_value = round(daily_import - daily_export, 4)
+        self.async_write_ha_state()
+
+
 class EonOutageSensor(EonBaseSensor):
     """Sensor to detect power outages (gaps > 15 min)."""
     
@@ -496,7 +516,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.10",
+            sw_version="1.0.11",
         )
 
     @property
