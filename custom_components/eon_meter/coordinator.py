@@ -37,6 +37,15 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
 
         # Buffer to store historical data points to handle backfill and accumulation
         self._data_buffer = {} 
+
+        # Diagnostics property for easy sensor representation
+        self.sync_info = {
+            "status": "Inicializálás alatt",
+            "last_error": "-",
+            "last_sync": "-",
+            "rows_fetched": 0,
+            "buffer_size": 0
+        }
         
         super().__init__(
             hass,
@@ -101,11 +110,22 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
 
                 # Check for critical failure
                 if self.mode == MODE_API and not rows_api and errors:
+                    self._update_sync_info("Hiba történt", "\n".join(errors), 0)
                     raise UpdateFailed(f"API Error: {errors[0]}")
                 if self.mode == MODE_EMAIL and not rows_email and errors:
+                    self._update_sync_info("Hiba történt", "\n".join(errors), 0)
                     raise UpdateFailed(f"Email Error: {errors[0]}")
                 if self.mode == MODE_BOTH and not rows_api and not rows_email and errors:
+                   self._update_sync_info("Kettős Hiba", "\n".join(errors), 0)
                    raise UpdateFailed(f"Both sources failed: {errors}")
+
+                # If no errors but no data
+                if not rows_api and not rows_email:
+                    self._update_sync_info("Nincs új adat", "Nem talált feldolgozható levelet/API adatot.", 0)
+                    return list(self._data_buffer.values())
+                    
+                # We have data! Update sync info to Success
+                self._update_sync_info("Sikeres Frissítés", "-", len(rows_api) + len(rows_email))
 
                 # Merge and Deduplicate
                 new_rows = rows_api + rows_email
@@ -155,10 +175,21 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
                 final_rows.sort(key=self._get_ts_int)
                 
                 _LOGGER.debug(f"Fetched & Merged {len(final_rows)} rows (Buffer Size: {len(self._data_buffer)})")
+                self.sync_info["buffer_size"] = len(self._data_buffer)
                 return final_rows
 
+        except UpdateFailed:
+            raise
         except Exception as exc:
+            self._update_sync_info("Kritikus Rendszerhiba", str(exc), 0)
             raise UpdateFailed(f"Unexpected error fetching E.ON data: {exc}") from exc
+
+    def _update_sync_info(self, status, error, fetched):
+        from datetime import datetime
+        self.sync_info["status"] = status
+        self.sync_info["last_error"] = error
+        self.sync_info["last_sync"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.sync_info["rows_fetched"] = fetched
 
     async def _fetch_api(self) -> List[Dict[str, Any]]:
         session = async_get_clientsession(self.hass)

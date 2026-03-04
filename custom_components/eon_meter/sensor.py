@@ -30,6 +30,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
         EonMonthlySensor(coordinator, "import", "Num1", "Import Monthly"),
         EonMonthlySensor(coordinator, "export", "Num2", "Export Monthly"),
         EonOutageSensor(coordinator, "Last Outage"),
+        EonStatusSensor(coordinator, "API/IMAP Status"),
     ]
     
     async_add_entities(entities)
@@ -362,3 +363,38 @@ class EonOutageSensor(EonBaseSensor):
         if found_any:
             self._last_ts = max_ts
             self.async_write_ha_state()
+
+class EonStatusSensor(CoordinatorEntity, SensorEntity):
+    """Sensor to display the technical status / error messages of the data fetching."""
+    
+    def __init__(self, coordinator, name):
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_name = name
+        self._attr_unique_id = "eon_meter_sync_status"
+        self._attr_icon = "mdi:lan-check"
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        """Return device information."""
+        pod = "Unknown"
+        if self.coordinator.data and len(self.coordinator.data) > 0:
+            pod = self.coordinator.data[0].get("Pod", "Unknown")
+            
+        return DeviceInfo(
+            identifiers={(DOMAIN, "eon_main_device")},
+            name=f"E.ON Meter {pod}",
+            manufacturer="E.ON",
+            model="Smart Meter API",
+            sw_version="1.0.4",
+        )
+
+    @property
+    def native_value(self):
+        """Return the current exact operational status."""
+        return self.coordinator.sync_info.get("status", "Ismeretlen")
+
+    @property
+    def extra_state_attributes(self):
+        """Include the exact last error and sync times."""
+        return self.coordinator.sync_info

@@ -122,7 +122,7 @@ def fetch_from_email(host, port, user, password, subject_filter):
         
     except Exception as e:
         _LOGGER.error(f"IMAP Error: {e}")
-        return []
+        raise Exception(f"IMAP Hiba: {e}") from e
 
 def _parse_excel(file_obj):
     rows = []
