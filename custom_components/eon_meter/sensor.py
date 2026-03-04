@@ -19,6 +19,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     entities = [
+        EonIntervalSensor(coordinator, "Num1", "Import 15min (+A)"),
+        EonIntervalSensor(coordinator, "Num2", "Export 15min (-A)"),
         EonTotalSensor(coordinator, "import", "Num1", "Import Total"),
         EonTotalSensor(coordinator, "export", "Num2", "Export Total"),
         EonDailySensor(coordinator, "import", "Num1", "Import Daily"),
@@ -100,6 +102,36 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         except ValueError:
             return 0.0
 
+class EonIntervalSensor(EonBaseSensor):
+    """Sensor for the exact 15-minute interval raw values (+A / -A)."""
+    
+    def __init__(self, coordinator, data_key, name):
+        super().__init__(coordinator, name)
+        self._data_key = data_key
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+
+    @property
+    def extra_state_attributes(self):
+        attrs = super().extra_state_attributes
+        if self.coordinator.data and len(self.coordinator.data) > 0:
+            last_row = self.coordinator.data[-1]
+            for key, val in last_row.items():
+                if key not in ["Timestamp", "Datum", "Pod", "Num1", "Num2"]:
+                    attrs[key] = val
+        return attrs
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+            
+        # Get the very last raw timestamp and value from the payload
+        last_row = rows[-1]
+        self._last_ts = self._parse_timestamp(last_row)
+        self._attr_native_value = self._get_val(last_row, self._data_key)
+        self.async_write_ha_state()
 
 class EonTotalSensor(EonBaseSensor):
     """Sensor for cumulative total (Import/Export)."""

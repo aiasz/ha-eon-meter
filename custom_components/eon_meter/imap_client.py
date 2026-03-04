@@ -130,28 +130,27 @@ def _parse_excel(file_obj):
         wb = openpyxl.load_workbook(file_obj, data_only=True)
         ws = wb.active # Assume first sheet
         
-        # Skip header rows. Find where data starts.
-        # We look for a row where column A matches date pattern
-        # Pattern: YYYY.MM.DD. HH:MM
-        # Regex: ^\d{4}\.\d{2}\.\d{2}\. \d{2}:\d{2}$
-        
         date_pattern = re.compile(r"^\d{4}\.\d{2}\.\d{2}\. \d{2}:\d{2}$")
         
+        # Read headers first if possible, or just assign column indexes
+        headers = []
+        for i, col in enumerate(ws.iter_cols(1, ws.max_column, 1, 1, values_only=True)):
+             head_val = col[0]
+             if head_val:
+                 headers.append(str(head_val).strip())
+             else:
+                 headers.append(f"Col_{i}")
+
         for row in ws.iter_rows(values_only=True):
             if not row or len(row) < 3: continue
             
             col_a = row[0]
-            val_import = row[1]
-            val_export = row[2]
             
             dt = None
-            
-            # Handle datetime object directly
             if isinstance(col_a, datetime):
                 dt = col_a
             else:
-                s_val = str(col_a).strip()
-                # Try regex for the specific string format seen in file
+                s_val = str(col_a).strip() if col_a else ""
                 if date_pattern.match(s_val):
                     try:
                         dt = datetime.strptime(s_val, "%Y.%m.%d. %H:%M")
@@ -163,17 +162,26 @@ def _parse_excel(file_obj):
 
             ts_ms = int(dt.timestamp() * 1000)
 
-            # Check for None
-            if val_import is None: val_import = 0.0
-            if val_export is None: val_export = 0.0
-            
+            # Map dynamically all columns
             mapped_row = {
                 "Timestamp": f"/Date({ts_ms})/",
-                "Num1": val_import,
-                "Num2": val_export,
                 "Datum": dt.strftime("%Y-%m-%d"),
-                "Pod": "EmailData" # Placeholder
+                "Pod": "EmailData"
             }
+
+            for idx, val in enumerate(row):
+                if idx == 0: continue # Skip time column
+                
+                col_name = headers[idx] if idx < len(headers) else f"Col_{idx}"
+                # For compatibility with API, map indexing 1 to Num1 (+A) and 2 to Num2 (-A)
+                if idx == 1:
+                    mapped_row["Num1"] = val if val is not None else 0.0
+                elif idx == 2:
+                    mapped_row["Num2"] = val if val is not None else 0.0
+                
+                # Also store the literal column name from the Excel
+                mapped_row[col_name] = val if val is not None else 0.0
+
             rows.append(mapped_row)
                 
     except Exception as e:
