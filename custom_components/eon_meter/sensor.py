@@ -64,7 +64,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.6",
+            sw_version="1.0.7",
         )
 
     async def async_added_to_hass(self):
@@ -325,8 +325,27 @@ class EonOutageSensor(EonBaseSensor):
     def __init__(self, coordinator, name):
         super().__init__(coordinator, name)
         self._attr_device_class = SensorDeviceClass.TIMESTAMP
-        self._attr_native_value = None # datetime string or None
-        # We don't accumulate values, just store last outage time
+        self._attr_native_value = None
+        self._attr_state_class = None  # No state class for timestamp sensor
+
+    async def async_added_to_hass(self):
+        """Restore last state - timestamp sensor needs special handling."""
+        await super().async_added_to_hass()
+        # Override float restore - timestamps must be datetime or None
+        last_state = await self.async_get_last_state()
+        if last_state and last_state.state not in ("unknown", "unavailable", "0.0", "0", "None", "none"):
+            try:
+                from datetime import datetime, timezone
+                import re
+                # Try parse ISO datetime string
+                dt = datetime.fromisoformat(last_state.state)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                self._attr_native_value = dt
+            except Exception:
+                self._attr_native_value = None
+        else:
+            self._attr_native_value = None
 
     def _handle_coordinator_update(self) -> None:
         rows = self.coordinator.data
@@ -352,9 +371,9 @@ class EonOutageSensor(EonBaseSensor):
             if last_seen_ts > 0:
                 diff = ts - last_seen_ts
                 if diff > 15 * 60 * 1000 + 1000: # 15 min + tolerance
-                    # Gap detected
-                    # Let's say outage happened at last_seen_ts + 15min
-                    outage_time = datetime.fromtimestamp((last_seen_ts / 1000.0) + 900)
+                    # Gap detected - use timezone-aware datetime as HA requires
+                    from datetime import timezone
+                    outage_time = datetime.fromtimestamp((last_seen_ts / 1000.0) + 900, tz=timezone.utc)
                     self._attr_native_value = outage_time
             
             last_seen_ts = ts
@@ -386,7 +405,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.6",
+            sw_version="1.0.7",
         )
 
     @property
