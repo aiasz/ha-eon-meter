@@ -50,8 +50,13 @@ def _decode_str(s):
         _LOGGER.warning(f"Error decoding string: {e}")
         return str(s)
 
-def fetch_from_email(host, port, user, password, subject_filter):
-    """Sync function to fetch and process email attachment."""
+def fetch_from_email(host, port, user, password, subject_filter,
+                     email_action="keep", move_folder="Archív"):
+    """Sync function to fetch and process email attachment.
+
+    email_action: 'keep' | 'delete' | 'move'
+    move_folder:  target IMAP folder name (used when email_action=='move')
+    """
     try:
         mail = imaplib.IMAP4_SSL(host, port)
         mail.login(user, password)
@@ -73,6 +78,7 @@ def fetch_from_email(host, port, user, password, subject_filter):
 
         rows = []
         found_attachment = False
+        processed_mid = None
 
         for mid in msg_ids[:15]:
             typ, hdr_data = mail.fetch(mid, '(BODY.PEEK[HEADER.FIELDS (SUBJECT DATE)])')
@@ -115,6 +121,7 @@ def fetch_from_email(host, port, user, password, subject_filter):
                             if excel_rows:
                                 rows.extend(excel_rows)
                                 found_attachment = True
+                                processed_mid = mid
                                 break
                         else:
                             _LOGGER.warning("winmail.dat did not contain a recognizable xlsx.")
@@ -130,12 +137,17 @@ def fetch_from_email(host, port, user, password, subject_filter):
                         if excel_rows:
                             rows.extend(excel_rows)
                             found_attachment = True
+                            processed_mid = mid
                             break
                     except Exception as e:
                         _LOGGER.error(f"Error processing attachment {filename}: {e}")
 
             if found_attachment:
                 break
+
+        # Post-processing action on the found email
+        if found_attachment and processed_mid is not None:
+            _apply_email_action(mail, processed_mid, email_action, move_folder)
 
         mail.close()
         mail.logout()
@@ -144,6 +156,45 @@ def fetch_from_email(host, port, user, password, subject_filter):
     except Exception as e:
         _LOGGER.error(f"IMAP Error: {e}")
         raise Exception(f"IMAP Hiba: {e}") from e
+
+
+def _apply_email_action(mail, mid, action: str, move_folder: str):
+    """Apply post-processing action (keep/delete/move) to a processed email."""
+    try:
+        if action == "delete":
+            mail.store(mid, '+FLAGS', '\\Deleted')
+            mail.expunge()
+            _LOGGER.info(f"Email deleted (id={mid.decode()})")
+
+        elif action == "move":
+            # Ensure target folder exists, create if missing
+            typ, folders = mail.list()
+            folder_exists = False
+            if folders:
+                for f in folders:
+                    if f and move_folder.lower() in f.decode("utf-8", errors="replace").lower():
+                        folder_exists = True
+                        break
+            if not folder_exists:
+                mail.create(move_folder)
+                _LOGGER.info(f"Created IMAP folder: {move_folder}")
+
+            # Copy to target folder then delete from source
+            result = mail.copy(mid, move_folder)
+            if result[0] == 'OK':
+                mail.store(mid, '+FLAGS', '\\Deleted')
+                mail.expunge()
+                _LOGGER.info(f"Email moved to '{move_folder}' (id={mid.decode()})")
+            else:
+                _LOGGER.warning(f"IMAP copy to '{move_folder}' failed: {result}")
+
+        else:  # keep
+            _LOGGER.debug(f"Email kept in inbox (action=keep, id={mid.decode()})")
+
+    except Exception as e:
+        _LOGGER.error(f"Email action '{action}' failed: {e}")
+
+
 
 
 def _parse_excel(file_obj):

@@ -10,7 +10,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 
-from .const import DOMAIN, MODE_API, MODE_EMAIL, MODE_BOTH, CONF_URL, CONF_TOKEN, CONF_IMAP_HOST, CONF_IMAP_PORT, CONF_IMAP_USER, CONF_IMAP_PASS, CONF_EMAIL_SUBJECT, CONF_SCAN_INTERVAL, CONF_DATA_SOURCE
+from .const import (
+    DOMAIN, MODE_API, MODE_EMAIL, MODE_BOTH,
+    CONF_URL, CONF_TOKEN, CONF_IMAP_HOST, CONF_IMAP_PORT, CONF_IMAP_USER, CONF_IMAP_PASS,
+    CONF_EMAIL_SUBJECT, CONF_SCAN_INTERVAL, CONF_DATA_SOURCE,
+    CONF_EMAIL_ACTION, CONF_EMAIL_MOVE_FOLDER,
+    DEFAULT_EMAIL_ACTION, DEFAULT_EMAIL_MOVE_FOLDER,
+)
 from .imap_client import fetch_from_email
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,6 +40,8 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
         self.imap_user = config.get(CONF_IMAP_USER, "")
         self.imap_pass = config.get(CONF_IMAP_PASS, "")
         self.email_subject = config.get(CONF_EMAIL_SUBJECT, "")
+        self.email_action = config.get(CONF_EMAIL_ACTION, DEFAULT_EMAIL_ACTION)
+        self.email_move_folder = config.get(CONF_EMAIL_MOVE_FOLDER, DEFAULT_EMAIL_MOVE_FOLDER)
         
         scan_interval = config.get(CONF_SCAN_INTERVAL, 3600)
 
@@ -48,6 +56,7 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
             "status": "Inicializálás alatt",
             "last_error": "-",
             "last_sync": "-",
+            "last_data_timestamp": "-",
             "rows_fetched": 0,
             "buffer_size": 0
         }
@@ -99,7 +108,9 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
                             self.imap_port,
                             self.imap_user,
                             self.imap_pass,
-                            self.email_subject
+                            self.email_subject,
+                            self.email_action,
+                            self.email_move_folder,
                         )
                     except Exception as e:
                         _LOGGER.warning(f"Email Fetch failed: {e}")
@@ -122,7 +133,9 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
                             self.imap_port,
                             self.imap_user,
                             self.imap_pass,
-                            self.email_subject
+                            self.email_subject,
+                            self.email_action,
+                            self.email_move_folder,
                         )
                     except Exception as e:
                         _LOGGER.warning(f"Email Fetch failed (in dual mode): {e}")
@@ -196,6 +209,16 @@ class EonDataUpdateCoordinator(DataUpdateCoordinator):
                 
                 _LOGGER.debug(f"Fetched & Merged {len(final_rows)} rows (Buffer Size: {len(self._data_buffer)})")
                 self.sync_info["buffer_size"] = len(self._data_buffer)
+
+                # Update last data timestamp from the latest buffered row
+                if self._data_buffer:
+                    latest_ts_ms = max(self._data_buffer.keys())
+                    try:
+                        from datetime import datetime as _dt, timezone as _tz
+                        latest_dt = _dt.fromtimestamp(latest_ts_ms / 1000.0, tz=_tz.utc)
+                        self.sync_info["last_data_timestamp"] = latest_dt.strftime("%Y-%m-%d %H:%M:%S UTC")
+                    except Exception:
+                        self.sync_info["last_data_timestamp"] = str(latest_ts_ms)
 
                 # Persist the buffer so it survives HA restarts
                 await self.async_save_buffer()

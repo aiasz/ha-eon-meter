@@ -1,7 +1,7 @@
 # E.ON Meter Data for Home Assistant (ha-eon-meter)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-1.0.17-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
+[![Version](https://img.shields.io/badge/version-1.0.18-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
 
 Egy Home Assistant integráció (Custom Component) az E.ON okos fogyasztásmérők (Smart Meter) adatainak lekérdezésére és Home Assistantban történő megjelenítésére.
 

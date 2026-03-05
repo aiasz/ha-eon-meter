@@ -1,7 +1,7 @@
 {
   "domain": "eon_meter",
   "name": "E.ON Meter Data",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "documentation": "https://github.com/Aiasz/ha-eon-meter",
   "issue_tracker": "https://github.com/Aiasz/ha-eon-meter/issues",
   "requirements": [
@@ -11,5 +11,6 @@
   "dependencies": [],
   "codeowners": ["@Aiasz"],
   "config_flow": true,
-  "iot_class": "local_polling"
+  "iot_class": "local_polling",
+  "icon": "mdi:lightning-bolt"
 }

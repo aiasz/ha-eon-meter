@@ -29,18 +29,23 @@ async def async_setup_entry(hass, entry, async_add_entities):
         EonWeeklySensor(coordinator, "export", "Num2", "Export Weekly"),
         EonMonthlySensor(coordinator, "import", "Num1", "Import Monthly"),
         EonMonthlySensor(coordinator, "export", "Num2", "Export Monthly"),
-        # --- Nettó egyenleg ---
+        # --- Nettó egyenleg (részletes info az attribútumokban) ---
         EonNetBalanceSensor(coordinator, "Napi Netto Egyenleg"),
         # --- Napi bontás (minden nap import/export/net a bufferből) ---
         EonDailyBreakdownSensor(coordinator, "Napi Fogyasztás Bontás"),
-        # --- Mérőóra tényleges állása (OBIS kumulatív) ---
+        # --- Mérőóra tényleges állása (OBIS kumulatív — jelenleg 0, disabled by default) ---
         EonObisLatestSensor(coordinator, "1-1:1.8.0*0", "Mérőóra Import Állás",
-                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING,
+                            enabled_by_default=False),
         EonObisLatestSensor(coordinator, "1-1:2.8.0*0", "Mérőóra Export Állás",
-                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
-        # --- Reaktív energia (napi összeg) ---
-        EonDailySensor(coordinator, "reaktiv_import", "+R",   "Import Reaktiv Daily"),
-        EonDailySensor(coordinator, "reaktiv_export", "-R",   "Export Reaktiv Daily"),
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING,
+                            enabled_by_default=False),
+        # --- Reaktív energia (napi összeg — jelenleg 0, disabled by default) ---
+        EonDailySensor(coordinator, "reaktiv_import", "+R",   "Import Reaktiv Daily",  enabled_by_default=False),
+        EonDailySensor(coordinator, "reaktiv_export", "-R",   "Export Reaktiv Daily",  enabled_by_default=False),
+        # --- Időbélyeg szenzorok ---
+        EonLastFetchSensor(coordinator, "Utolsó Lekérdezés"),
+        EonLastDataSensor(coordinator, "Utolsó Adat Időbélyege"),
         # --- Diagnosztika ---
         EonOutageSensor(coordinator, "Last Outage"),
         EonStatusSensor(coordinator, "API/IMAP Status"),
@@ -77,7 +82,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.17",
+            sw_version="1.0.18",
         )
 
     async def async_added_to_hass(self):
@@ -268,13 +273,14 @@ class EonTotalSensor(EonBaseSensor):
 class EonDailySensor(EonBaseSensor):
     """Sensor for Daily usage (resets at midnight)."""
     
-    def __init__(self, coordinator, type_key, data_key, name):
+    def __init__(self, coordinator, type_key, data_key, name, enabled_by_default=True):
         super().__init__(coordinator, name)
         self._data_key = data_key
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._current_day_str = None
+        self._attr_entity_registry_enabled_default = enabled_by_default
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -472,13 +478,14 @@ class EonObisLatestSensor(EonBaseSensor):
     """
 
     def __init__(self, coordinator, obis_key: str, name: str,
-                 device_class=None, state_class=None):
+                 device_class=None, state_class=None, enabled_by_default=True):
         super().__init__(coordinator, name)
         self._obis_key = obis_key
         self._attr_device_class = device_class
         self._attr_state_class = state_class
         self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_icon = "mdi:meter-electric"
+        self._attr_entity_registry_enabled_default = enabled_by_default
 
     @property
     def extra_state_attributes(self):
@@ -745,7 +752,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.17",
+            sw_version="1.0.18",
         )
 
     @property
@@ -757,3 +764,79 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self):
         """Include the exact last error and sync times."""
         return self.coordinator.sync_info
+
+
+class EonLastFetchSensor(CoordinatorEntity, SensorEntity):
+    """TIMESTAMP sensor: when the coordinator last successfully fetched email data."""
+
+    def __init__(self, coordinator, name):
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_name = name
+        self._attr_unique_id = "eon_meter_last_fetch"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_icon = "mdi:email-sync"
+        self._attr_state_class = None
+        self._attr_native_value = None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        pod = "Unknown"
+        if self.coordinator.data and len(self.coordinator.data) > 0:
+            pod = self.coordinator.data[0].get("Pod", "Unknown")
+        return DeviceInfo(
+            identifiers={(DOMAIN, "eon_main_device")},
+            name=f"E.ON Meter {pod}",
+            manufacturer="E.ON",
+            model="Smart Meter API",
+            sw_version="1.0.18",
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        raw = self.coordinator.sync_info.get("last_sync", "-")
+        if raw and raw != "-":
+            try:
+                from datetime import datetime, timezone
+                dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S")
+                self._attr_native_value = dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                self._attr_native_value = None
+        self.async_write_ha_state()
+
+
+class EonLastDataSensor(CoordinatorEntity, SensorEntity):
+    """TIMESTAMP sensor: the timestamp of the latest measurement row in the buffer (from Excel)."""
+
+    def __init__(self, coordinator, name):
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_name = name
+        self._attr_unique_id = "eon_meter_last_data_ts"
+        self._attr_device_class = SensorDeviceClass.TIMESTAMP
+        self._attr_icon = "mdi:table-clock"
+        self._attr_state_class = None
+        self._attr_native_value = None
+
+    @property
+    def device_info(self) -> DeviceInfo:
+        pod = "Unknown"
+        if self.coordinator.data and len(self.coordinator.data) > 0:
+            pod = self.coordinator.data[0].get("Pod", "Unknown")
+        return DeviceInfo(
+            identifiers={(DOMAIN, "eon_main_device")},
+            name=f"E.ON Meter {pod}",
+            manufacturer="E.ON",
+            model="Smart Meter API",
+            sw_version="1.0.18",
+        )
+
+    def _handle_coordinator_update(self) -> None:
+        raw = self.coordinator.sync_info.get("last_data_timestamp", "-")
+        if raw and raw != "-":
+            try:
+                from datetime import datetime, timezone
+                dt = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S UTC")
+                self._attr_native_value = dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                self._attr_native_value = None
+        self.async_write_ha_state()
