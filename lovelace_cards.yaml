@@ -1,0 +1,320 @@
+# =============================================================================
+# E.ON Meter – Dashboard kártyák (egyenként beilleszthető)
+# =============================================================================
+#
+# Hogyan találod meg a pontos entity ID-kat:
+#   Developer Tools → States → Keresd: "eon_"
+#   pl.: sensor.eon_import_daily, sensor.eon_export_daily, ...
+#
+# Kártyánként illeszd be HA-ba:
+#   Dashboard → Add Card → Manual card → másold be a kártya YAML-ját
+#
+# =============================================================================
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 1: Státusz chip-sor (Mushroom Chips – HACS)
+# ─────────────────────────────────────────────────────────────────────────────
+type: custom:mushroom-chips-card
+chips:
+  - type: entity
+    entity: sensor.eon_meter_sync_status
+    icon: mdi:check-network
+    icon_color: green
+  - type: entity
+    entity: sensor.eon_meter_last_fetch
+    icon: mdi:clock-sync-outline
+  - type: entity
+    entity: sensor.eon_meter_last_data_ts
+    icon: mdi:database-clock-outline
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 2: Napi nettó egyenleg – dinamikus ikon és szín (Mushroom Template – HACS)
+# ─────────────────────────────────────────────────────────────────────────────
+type: custom:mushroom-template-card
+primary: "Napi nettó egyenleg"
+secondary: >
+  {{ states('sensor.eon_napi_netto_egyenleg') | float(0) | round(2) }} kWh
+icon: >
+  {% set val = states('sensor.eon_napi_netto_egyenleg') | float(0) %}
+  {% if val < 0 %}mdi:solar-power
+  {% elif val > 0 %}mdi:transmission-tower-import
+  {% else %}mdi:scale-balance{% endif %}
+icon_color: >
+  {% set val = states('sensor.eon_napi_netto_egyenleg') | float(0) %}
+  {% if val < 0 %}green{% elif val > 0 %}orange{% else %}blue{% endif %}
+tap_action:
+  action: more-info
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 3: Mai legfontosabb 4 szám (Glance – beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: glance
+title: "Mai adatok"
+show_name: true
+show_icon: true
+show_state: true
+entities:
+  - entity: sensor.eon_import_daily
+    name: "Import"
+    icon: mdi:transmission-tower-import
+  - entity: sensor.eon_export_daily
+    name: "Export"
+    icon: mdi:solar-power-variant
+  - entity: sensor.eon_napi_csucsterteles
+    name: "Csúcs"
+    icon: mdi:lightning-bolt-circle
+  - entity: sensor.eon_becsult_napi_koltseg
+    name: "Költség"
+    icon: mdi:cash
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 4: Önellátási arány – Gauge (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: gauge
+title: "Önellátási Arány"
+entity: sensor.eon_onellatassi_arany
+unit: "%"
+min: 0
+max: 100
+needle: true
+severity:
+  green: 60
+  yellow: 30
+  red: 0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 5: Import / Export – 7 napos mini-graph (mini-graph-card – HACS)
+# ─────────────────────────────────────────────────────────────────────────────
+type: custom:mini-graph-card
+title: "Import / Export – 7 nap"
+icon: mdi:chart-line
+hours_to_show: 168
+points_per_hour: 0.04
+line_width: 2
+smoothing: true
+show:
+  labels: false
+  points: false
+  legend: true
+  fill: true
+entities:
+  - entity: sensor.eon_import_daily
+    name: "Import"
+    color: "#e74c3c"
+  - entity: sensor.eon_export_daily
+    name: "Export"
+    color: "#2ecc71"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 6: Napi nettó egyenleg trend – 14 nap (mini-graph-card – HACS)
+# ─────────────────────────────────────────────────────────────────────────────
+type: custom:mini-graph-card
+title: "Napi Nettó Egyenleg – 14 nap"
+icon: mdi:scale-balance
+hours_to_show: 336
+points_per_hour: 0.03
+line_width: 2
+smoothing: true
+color_thresholds:
+  - value: -999
+    color: "#2ecc71"
+  - value: 0
+    color: "#e74c3c"
+show:
+  fill: true
+  extrema: true
+  labels: true
+  legend: false
+entities:
+  - entity: sensor.eon_napi_netto_egyenleg
+    name: "Nettó egyenleg"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 7: Havi import vs export – statisztika oszlopdiagram (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: statistics-graph
+title: "Havi Import vs Export"
+chart_type: bar
+period: month
+stat_types:
+  - max
+entities:
+  - entity: sensor.eon_import_monthly
+    name: "Import (havi)"
+  - entity: sensor.eon_export_monthly
+    name: "Export (havi)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 8: Heti trend – vonaldiagram (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: statistics-graph
+title: "Heti Import / Export"
+chart_type: line
+period: week
+stat_types:
+  - max
+entities:
+  - entity: sensor.eon_import_weekly
+    name: "Import (heti)"
+  - entity: sensor.eon_export_weekly
+    name: "Export (heti)"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 9: Összesítő táblázat – nap / hét / hónap (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: entities
+title: "Összesítő"
+show_header_toggle: false
+entities:
+  - entity: sensor.eon_import_daily
+    name: "Import – ma"
+    icon: mdi:transmission-tower-import
+  - entity: sensor.eon_export_daily
+    name: "Export – ma"
+    icon: mdi:solar-power-variant
+  - type: divider
+  - entity: sensor.eon_import_weekly
+    name: "Import – ezen a héten"
+  - entity: sensor.eon_export_weekly
+    name: "Export – ezen a héten"
+  - type: divider
+  - entity: sensor.eon_import_monthly
+    name: "Import – ebben a hónapban"
+  - entity: sensor.eon_export_monthly
+    name: "Export – ebben a hónapban"
+  - type: divider
+  - entity: sensor.eon_becsult_napi_koltseg
+    name: "Becsült napi költség"
+    icon: mdi:cash-clock
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 10: Heti import/export oszlopdiagram (apexcharts-card – HACS)
+# ─────────────────────────────────────────────────────────────────────────────
+type: custom:apexcharts-card
+header:
+  show: true
+  title: "Import vs Export – ezen a héten"
+  show_states: true
+  colorize_states: true
+chart_type: bar
+span:
+  start: week
+series:
+  - entity: sensor.eon_import_weekly
+    name: "Import kWh"
+    color: "#e74c3c"
+    type: column
+  - entity: sensor.eon_export_weekly
+    name: "Export kWh"
+    color: "#2ecc71"
+    type: column
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 11: Mérőóra állások – OBIS (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: entities
+title: "Mérőóra Állások (OBIS)"
+show_header_toggle: false
+entities:
+  - entity: sensor.eon_merooora_import_allas
+    name: "Import állás"
+    icon: mdi:counter
+  - entity: sensor.eon_merooora_export_allas
+    name: "Export állás"
+    icon: mdi:counter
+  - type: divider
+  - entity: sensor.eon_merooora_t1_import_allas
+    name: "T1 Import állás"
+    icon: mdi:numeric-1-circle-outline
+  - entity: sensor.eon_merooora_t2_import_allas
+    name: "T2 Import állás"
+    icon: mdi:numeric-2-circle-outline
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 12: Csúcsteljesítmény T1/T2 – Gauge páros (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: horizontal-stack
+cards:
+  - type: gauge
+    title: "Csúcs T1"
+    entity: sensor.eon_csucsteljesitmeny_t1
+    unit: "kW"
+    min: 0
+    max: 15
+    needle: true
+    severity:
+      green: 0
+      yellow: 8
+      red: 12
+  - type: gauge
+    title: "Csúcs T2"
+    entity: sensor.eon_csucsteljesitmeny_t2
+    unit: "kW"
+    min: 0
+    max: 15
+    needle: true
+    severity:
+      green: 0
+      yellow: 8
+      red: 12
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 13: Önellátási arány 30 napos trend (mini-graph-card – HACS)
+# ─────────────────────────────────────────────────────────────────────────────
+type: custom:mini-graph-card
+title: "Önellátási Arány – 30 nap"
+icon: mdi:percent
+hours_to_show: 720
+points_per_hour: 0.02
+line_width: 2
+lower_bound: 0
+upper_bound: 100
+show:
+  fill: true
+  extrema: true
+  labels: false
+  legend: false
+color_thresholds:
+  - value: 0
+    color: "#e74c3c"
+  - value: 40
+    color: "#f39c12"
+  - value: 70
+    color: "#2ecc71"
+entities:
+  - entity: sensor.eon_onellatassi_arany
+    name: "Önellátási arány %"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# KÁRTYA 14: Rendszer státusz (beépített)
+# ─────────────────────────────────────────────────────────────────────────────
+type: entities
+title: "Rendszer Állapot"
+show_header_toggle: false
+entities:
+  - entity: sensor.eon_meter_sync_status
+    name: "API/IMAP Státusz"
+    icon: mdi:check-network
+  - entity: sensor.eon_meter_last_fetch
+    name: "Utolsó lekérdezés"
+    icon: mdi:clock-outline
+  - entity: sensor.eon_meter_last_data_ts
+    name: "Utolsó adat időbélyege"
+    icon: mdi:database-clock-outline
+  - entity: sensor.eon_last_outage
+    name: "Utolsó kiesés"
+    icon: mdi:alert-circle-outline
