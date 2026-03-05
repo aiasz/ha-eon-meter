@@ -6,11 +6,11 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfEnergy
+from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, CONF_TARIFF_PRICE, DEFAULT_TARIFF_PRICE
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,9 +38,25 @@ async def async_setup_entry(hass, entry, async_add_entities):
                             SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
         EonObisLatestSensor(coordinator, "1-1:2.8.0*0", "Mérőóra Export Állás",
                             SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        # --- Tariffás mérőóra állás (T1/T2) ---
+        EonObisLatestSensor(coordinator, "1-1:1.8.1*0", "Mérőóra T1 Import Állás",
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        EonObisLatestSensor(coordinator, "1-1:1.8.2*0", "Mérőóra T2 Import Állás",
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        # --- Csúcsteljesítmény (T1/T2 szerződéses teljesítményhez) ---
+        EonObisLatestSensor(coordinator, "1-1:1.6.1*0", "Csúcsteljesítmény T1",
+                            SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT,
+                            unit=UnitOfPower.KILO_WATT),
+        EonObisLatestSensor(coordinator, "1-1:1.6.2*0", "Csúcsteljesítmény T2",
+                            SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT,
+                            unit=UnitOfPower.KILO_WATT),
         # --- Reaktív energia (napi összeg) ---
         EonDailySensor(coordinator, "reaktiv_import", "+R",   "Import Reaktiv Daily"),
         EonDailySensor(coordinator, "reaktiv_export", "-R",   "Export Reaktiv Daily"),
+        # --- Számított szenzorok ---
+        EonPeakHourSensor(coordinator, "Napi Csúcsterhelés"),
+        EonSelfSufficiencyRatioSensor(coordinator, "Önellátási Arány"),
+        EonDailyCostSensor(coordinator, "Becsült Napi Költség"),
         # --- Időbélyeg szenzorok ---
         EonLastFetchSensor(coordinator, "Utolsó Lekérdezés"),
         EonLastDataSensor(coordinator, "Utolsó Adat Időbélyege"),
@@ -80,7 +96,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.19",
+            sw_version="1.0.20",
         )
 
     async def async_added_to_hass(self):
@@ -476,12 +492,12 @@ class EonObisLatestSensor(EonBaseSensor):
     """
 
     def __init__(self, coordinator, obis_key: str, name: str,
-                 device_class=None, state_class=None, enabled_by_default=True):
+                 device_class=None, state_class=None, enabled_by_default=True, unit=None):
         super().__init__(coordinator, name)
         self._obis_key = obis_key
         self._attr_device_class = device_class
         self._attr_state_class = state_class
-        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_native_unit_of_measurement = unit if unit is not None else UnitOfEnergy.KILO_WATT_HOUR
         self._attr_icon = "mdi:meter-electric"
         self._attr_entity_registry_enabled_default = enabled_by_default
 
@@ -750,7 +766,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.19",
+            sw_version="1.0.20",
         )
 
     @property
@@ -787,7 +803,7 @@ class EonLastFetchSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.19",
+            sw_version="1.0.20",
         )
 
     def _handle_coordinator_update(self) -> None:
@@ -825,7 +841,7 @@ class EonLastDataSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.19",
+            sw_version="1.0.20",
         )
 
     def _handle_coordinator_update(self) -> None:
@@ -837,4 +853,136 @@ class EonLastDataSensor(CoordinatorEntity, SensorEntity):
                 self._attr_native_value = dt.replace(tzinfo=timezone.utc)
             except Exception:
                 self._attr_native_value = None
+        self.async_write_ha_state()
+
+
+class EonPeakHourSensor(EonBaseSensor):
+    """Napi csúcsterhelés: a max. 15 perces aktív import slot értéke kW-ban.
+
+    Az adott napon melyik 15 perces időablakban volt a legnagyobb fogyasztás.
+    Állapot = becsült csúcsteljesítmény kW-ban (slot kWh × 4).
+    Attribútumban: peak_time (HH:MM UTC), peak_kwh (slot energia).
+    """
+
+    def __init__(self, coordinator, name: str):
+        super().__init__(coordinator, name)
+        self._attr_device_class = SensorDeviceClass.POWER
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+        self._attr_icon = "mdi:lightning-bolt-circle"
+        self._peak_time: str | None = None
+        self._peak_kwh: float = 0.0
+
+    @property
+    def extra_state_attributes(self):
+        attrs = super().extra_state_attributes
+        attrs["peak_time_utc"] = self._peak_time
+        attrs["peak_kwh"] = self._peak_kwh
+        return attrs
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+
+        last_day = self._last_data_day(rows)
+        if not last_day:
+            return
+
+        best_val = 0.0
+        best_time: str | None = None
+        for row in rows:
+            if row.get("Datum") != last_day:
+                continue
+            v = self._get_val(row, "Num1")
+            if v > best_val:
+                best_val = v
+                ts_str = row.get("Timestamp", "")
+                if ts_str.startswith("/Date("):
+                    try:
+                        ts_ms = int(ts_str[6:-2])
+                        dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+                        best_time = dt.strftime("%H:%M")
+                    except Exception:
+                        best_time = None
+
+        self._peak_kwh = round(best_val, 4)
+        self._peak_time = best_time
+        # kW = kWh per 15-min slot × 4
+        self._attr_native_value = round(best_val * 4, 4)
+        self.async_write_ha_state()
+
+
+class EonSelfSufficiencyRatioSensor(EonBaseSensor):
+    """Önellátási arány (%): export / (import + export) × 100 az aktuális napra.
+
+    0% = nincs visszatáplálás, 100% = teljes önellátás (ritka).
+    """
+
+    def __init__(self, coordinator, name: str):
+        super().__init__(coordinator, name)
+        self._attr_device_class = None
+        self._attr_state_class = SensorStateClass.MEASUREMENT
+        self._attr_native_unit_of_measurement = "%"
+        self._attr_icon = "mdi:solar-power"
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+
+        last_day = self._last_data_day(rows)
+        if not last_day:
+            return
+
+        daily_import = 0.0
+        daily_export = 0.0
+        for row in rows:
+            if row.get("Datum") == last_day:
+                daily_import += self._get_val(row, "Num1")
+                daily_export += self._get_val(row, "Num2")
+
+        total = daily_import + daily_export
+        ratio = round((daily_export / total) * 100, 2) if total > 0 else 0.0
+
+        self._attr_native_value = ratio
+        self.async_write_ha_state()
+
+
+class EonDailyCostSensor(EonBaseSensor):
+    """Becsült napi villanyszámla-költség: napi import × tarifa (Ft/kWh).
+
+    A tarifa ára az integrációs beállításoknól adható meg (alapértelmezett: 72 Ft/kWh).
+    """
+
+    def __init__(self, coordinator, name: str):
+        super().__init__(coordinator, name)
+        self._attr_device_class = SensorDeviceClass.MONETARY
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_native_unit_of_measurement = "HUF"
+        self._attr_icon = "mdi:cash"
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+
+        last_day = self._last_data_day(rows)
+        if not last_day:
+            return
+
+        # Read configurable tariff from options (falls back to data dict, then default)
+        tariff = float(
+            self.coordinator.config_entry.options.get(
+                CONF_TARIFF_PRICE,
+                self.coordinator.config_entry.data.get(CONF_TARIFF_PRICE, DEFAULT_TARIFF_PRICE),
+            )
+        )
+
+        daily_import = 0.0
+        for row in rows:
+            if row.get("Datum") == last_day:
+                daily_import += self._get_val(row, "Num1")
+
+        self._attr_native_value = round(daily_import * tariff, 2)
         self.async_write_ha_state()

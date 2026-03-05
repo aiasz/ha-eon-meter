@@ -31,3 +31,7 @@ EMAIL_ACTION_MOVE   = "move"    # move to folder
 
 DEFAULT_EMAIL_ACTION      = EMAIL_ACTION_MOVE
 DEFAULT_EMAIL_MOVE_FOLDER = "Archív"
+
+# Villanydíj becsléséhez
+CONF_TARIFF_PRICE    = "tariff_price"
+DEFAULT_TARIFF_PRICE = 72.0  # Ft/kWh (tájékoztató piaci ár, 2026)
