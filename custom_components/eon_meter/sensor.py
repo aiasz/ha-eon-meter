@@ -77,7 +77,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.14",
+            sw_version="1.0.15",
         )
 
     async def async_added_to_hass(self):
@@ -556,6 +556,89 @@ class EonDailyBreakdownSensor(EonBaseSensor):
             self._attr_native_value = days[latest_day]["net"]
             self.async_write_ha_state()
 
+        # Inject hourly net statistics so history/Energy charts show retroactive data
+        if self.entity_id:
+            self.hass.async_create_task(self._inject_net_statistics(rows))
+
+    async def _inject_net_statistics(self, rows) -> None:
+        """Inject hourly net (import − export) statistics into HA recorder."""
+        try:
+            from homeassistant.components.recorder import get_instance
+            from homeassistant.components.recorder.statistics import (
+                async_import_statistics,
+                StatisticData,
+                StatisticMetaData,
+            )
+        except ImportError:
+            try:
+                from homeassistant.components.recorder import get_instance
+                from homeassistant.components.recorder.models import StatisticData, StatisticMetaData
+                from homeassistant.components.recorder.statistics import async_import_statistics
+            except ImportError:
+                _LOGGER.warning("Recorder not available — skipping net statistics injection")
+                return
+
+        entity_id = self.entity_id
+        if not entity_id:
+            return
+
+        # Build hourly net buckets (Num1=import, Num2=export)
+        hourly_imp: dict = {}
+        hourly_exp: dict = {}
+        skipped = 0
+        for row in rows:
+            ts_str = row.get("Timestamp", "")
+            if not ts_str.startswith("/Date("):
+                skipped += 1
+                continue
+            try:
+                ts_ms = int(ts_str[6:-2])
+                dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+                hour_dt = dt.replace(minute=0, second=0, microsecond=0)
+            except Exception:
+                skipped += 1
+                continue
+            hourly_imp[hour_dt] = hourly_imp.get(hour_dt, 0.0) + self._get_val(row, "Num1")
+            hourly_exp[hour_dt] = hourly_exp.get(hour_dt, 0.0) + self._get_val(row, "Num2")
+
+        if not hourly_imp:
+            return
+
+        sorted_hours = sorted(hourly_imp.keys())
+        stats = []
+        cumulative = 0.0
+        for hour_dt in sorted_hours:
+            net_hour = hourly_imp.get(hour_dt, 0.0) - hourly_exp.get(hour_dt, 0.0)
+            cumulative += net_hour
+            stats.append(StatisticData(
+                start=hour_dt,
+                state=round(net_hour, 4),
+                sum=round(cumulative, 4),
+            ))
+
+        meta = StatisticMetaData(
+            has_mean=False,
+            has_sum=True,
+            name=self.name,
+            source="recorder",
+            statistic_id=entity_id,
+            unit_of_measurement=UnitOfEnergy.KILO_WATT_HOUR,
+        )
+
+        try:
+            instance = get_instance(self.hass)
+            await instance.async_add_executor_job(
+                lambda: async_import_statistics(self.hass, meta, stats)
+            )
+            _LOGGER.info(
+                "✅ Net statistics injected for %s: %d hourly buckets, cumulative=%.4f kWh (range: %s → %s)",
+                entity_id, len(stats), cumulative,
+                sorted_hours[0].strftime("%Y-%m-%d %H:%M"),
+                sorted_hours[-1].strftime("%Y-%m-%d %H:%M"),
+            )
+        except Exception as e:
+            _LOGGER.error("Failed to inject net statistics for %s: %s", entity_id, e)
+
 
 class EonOutageSensor(EonBaseSensor):
     """Sensor to detect power outages (gaps > 15 min)."""
@@ -643,7 +726,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.14",
+            sw_version="1.0.15",
         )
 
     @property
