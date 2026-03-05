@@ -77,7 +77,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.16",
+            sw_version="1.0.17",
         )
 
     async def async_added_to_hass(self):
@@ -116,6 +116,27 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             return float(v) if v is not None else 0.0
         except (ValueError, TypeError):
             return 0.0
+
+    @staticmethod
+    def _last_data_day(rows: list):
+        """Return the last day that has more than 1 measurement row.
+
+        Emails always include a 00:00 midnight row for the *next* day with all
+        zeros. Without this guard every daily/net sensor would show 0 because
+        that single-row day becomes the 'latest' day in the buffer.
+        Falls back to the actual last day when no multi-row day is found.
+        """
+        if not rows:
+            return None
+        day_counts: dict = {}
+        for row in rows:
+            d = row.get("Datum")
+            if d:
+                day_counts[d] = day_counts.get(d, 0) + 1
+        for day in sorted(day_counts.keys(), reverse=True):
+            if day_counts[day] > 1:
+                return day
+        return sorted(day_counts.keys())[-1] if day_counts else None
 
 class EonTotalSensor(EonBaseSensor):
     """Sensor for cumulative total (Import/Export)."""
@@ -272,10 +293,9 @@ class EonDailySensor(EonBaseSensor):
         if not rows:
             return
 
-        # Identify the "current" day based on the latest available data
-        last_row = rows[-1]
-        current_data_day = last_row.get("Datum")
-        
+        # Identify the "current" day — skip single midnight-only rows (next-day opener)
+        current_data_day = self._last_data_day(rows)
+
         if not current_data_day:
             return
 
@@ -426,8 +446,7 @@ class EonNetBalanceSensor(EonBaseSensor):
         if not rows:
             return
 
-        last_row = rows[-1]
-        current_day = last_row.get("Datum")
+        current_day = self._last_data_day(rows)
         if not current_day:
             return
 
@@ -550,10 +569,10 @@ class EonDailyBreakdownSensor(EonBaseSensor):
 
         self._days = days
 
-        # State = latest complete day's net value
-        if days:
-            latest_day = sorted(days.keys())[-1]
-            self._attr_native_value = days[latest_day]["net"]
+        # State = last day with actual data (skip single midnight-only rows)
+        last_day = self._last_data_day(rows)
+        if days and last_day and last_day in days:
+            self._attr_native_value = days[last_day]["net"]
             self.async_write_ha_state()
 
         # Inject hourly net statistics so history/Energy charts show retroactive data
@@ -726,7 +745,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.16",
+            sw_version="1.0.17",
         )
 
     @property
