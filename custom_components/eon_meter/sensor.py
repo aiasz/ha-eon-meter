@@ -19,15 +19,27 @@ async def async_setup_entry(hass, entry, async_add_entities):
     coordinator = hass.data[DOMAIN][entry.entry_id]
     
     entities = [
+        # --- Aktív energia (kumulatív összeg a bufferből) ---
         EonTotalSensor(coordinator, "import", "Num1", "Import Total"),
         EonTotalSensor(coordinator, "export", "Num2", "Export Total"),
+        # --- Napi / heti / havi számított értékek ---
         EonDailySensor(coordinator, "import", "Num1", "Import Daily"),
         EonDailySensor(coordinator, "export", "Num2", "Export Daily"),
         EonWeeklySensor(coordinator, "import", "Num1", "Import Weekly"),
         EonWeeklySensor(coordinator, "export", "Num2", "Export Weekly"),
         EonMonthlySensor(coordinator, "import", "Num1", "Import Monthly"),
         EonMonthlySensor(coordinator, "export", "Num2", "Export Monthly"),
+        # --- Nettó egyenleg ---
         EonNetBalanceSensor(coordinator, "Napi Netto Egyenleg"),
+        # --- Mérőóra tényleges állása (OBIS kumulatív) ---
+        EonObisLatestSensor(coordinator, "1-1:1.8.0*0", "Mérőóra Import Állás",
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        EonObisLatestSensor(coordinator, "1-1:2.8.0*0", "Mérőóra Export Állás",
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        # --- Reaktív energia (napi összeg) ---
+        EonDailySensor(coordinator, "reaktiv_import", "+R",   "Import Reaktiv Daily"),
+        EonDailySensor(coordinator, "reaktiv_export", "-R",   "Export Reaktiv Daily"),
+        # --- Diagnosztika ---
         EonOutageSensor(coordinator, "Last Outage"),
         EonStatusSensor(coordinator, "API/IMAP Status"),
     ]
@@ -63,7 +75,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.12",
+            sw_version="1.0.13",
         )
 
     async def async_added_to_hass(self):
@@ -98,8 +110,9 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     def _get_val(self, row, key):
         try:
-            return float(row.get(key, 0))
-        except ValueError:
+            v = row.get(key, 0)
+            return float(v) if v is not None else 0.0
+        except (ValueError, TypeError):
             return 0.0
 
 class EonTotalSensor(EonBaseSensor):
@@ -430,6 +443,58 @@ class EonNetBalanceSensor(EonBaseSensor):
         self.async_write_ha_state()
 
 
+class EonObisLatestSensor(EonBaseSensor):
+    """Sensor showing the latest non-zero value of an OBIS variable from the buffer.
+
+    Mérőóra tényleges állásához: pl. 1-1:1.8.0*0 (kumulatív import kWh).
+    Az óra legutóbbi beolvasott, nullától eltérő értékét mutatja.
+    """
+
+    def __init__(self, coordinator, obis_key: str, name: str,
+                 device_class=None, state_class=None):
+        super().__init__(coordinator, name)
+        self._obis_key = obis_key
+        self._attr_device_class = device_class
+        self._attr_state_class = state_class
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_icon = "mdi:meter-electric"
+
+    @property
+    def extra_state_attributes(self):
+        attrs = super().extra_state_attributes
+        attrs["obis_key"] = self._obis_key
+        # Show last timestamp that had a non-zero reading
+        rows = self.coordinator.data or []
+        for row in reversed(rows):
+            v = row.get(self._obis_key)
+            if v is not None and float(v) > 0:
+                attrs["last_reading_timestamp"] = row.get("Datum", "")
+                break
+        return attrs
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+
+        # Find the most recent non-zero/non-None value for this OBIS key
+        best_value = None
+        for row in reversed(rows):
+            raw = row.get(self._obis_key)
+            if raw is not None:
+                try:
+                    v = float(raw)
+                    if v > 0:
+                        best_value = v
+                        break
+                except (ValueError, TypeError):
+                    continue
+
+        if best_value is not None:
+            self._attr_native_value = round(best_value, 4)
+            self.async_write_ha_state()
+
+
 class EonOutageSensor(EonBaseSensor):
     """Sensor to detect power outages (gaps > 15 min)."""
     
@@ -516,7 +581,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.12",
+            sw_version="1.0.13",
         )
 
     @property
