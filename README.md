@@ -310,7 +310,7 @@ Ez a projekt a **Creative Commons Attribution-NonCommercial 4.0 International (C
 | Szabad | Feltétele |
 |--------|-----------|
 | ✅ Szabad felhasználás és módosítás | Hivatkozás az eredeti projektre kötelező |
-| ✅ Terjesztés és megosztás | El kell tüntetni az eredeti szerzőt (`Aiasz / ha-eon-meter`) |
+| ✅ Terjesztés és megosztás | Fel kell tüntetni az eredeti szerzőt (`Aiasz / ha-eon-meter`) |
 | ✅ Ingyenes személyes / otthoni használatra | — |
 | ❌ Kereskedelmi felhasználásra **nem** ingyenes | Kereskedelmi célra külön engedély szükséges |
 
