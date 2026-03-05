@@ -31,6 +31,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         EonMonthlySensor(coordinator, "export", "Num2", "Export Monthly"),
         # --- Nettó egyenleg ---
         EonNetBalanceSensor(coordinator, "Napi Netto Egyenleg"),
+        # --- Napi bontás (minden nap import/export/net a bufferből) ---
+        EonDailyBreakdownSensor(coordinator, "Napi Fogyasztás Bontás"),
         # --- Mérőóra tényleges állása (OBIS kumulatív) ---
         EonObisLatestSensor(coordinator, "1-1:1.8.0*0", "Mérőóra Import Állás",
                             SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
@@ -75,7 +77,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.13",
+            sw_version="1.0.14",
         )
 
     async def async_added_to_hass(self):
@@ -495,6 +497,66 @@ class EonObisLatestSensor(EonBaseSensor):
             self.async_write_ha_state()
 
 
+class EonDailyBreakdownSensor(EonBaseSensor):
+    """Per-day import/export/net breakdown across all buffered days.
+
+    State = latest complete day's net consumption (import − export) in kWh.
+    Attributes contain a dict of every day in the buffer with import/export/net.
+    Uses sum of +A (Num1) and -A (Num2) 15-min slots — equivalent to meter
+    reading delta and works even when 1-1:1.8.0*0 is 0/None in the data.
+    """
+
+    def __init__(self, coordinator, name: str):
+        super().__init__(coordinator, name)
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_icon = "mdi:calendar-month"
+        self._days: dict = {}
+
+    @property
+    def extra_state_attributes(self):
+        attrs = super().extra_state_attributes
+        attrs["daily_breakdown"] = self._days
+        attrs["days_in_buffer"] = len(self._days)
+        return attrs
+
+    def _handle_coordinator_update(self) -> None:
+        rows = self.coordinator.data
+        if not rows:
+            return
+
+        # Aggregate per Datum
+        days: dict[str, dict] = {}
+        for row in rows:
+            datum = row.get("Datum")
+            if not datum:
+                continue
+            day_str = str(datum)
+            if day_str not in days:
+                days[day_str] = {"import": 0.0, "export": 0.0}
+            days[day_str]["import"] += self._get_val(row, "Num1")
+            days[day_str]["export"] += self._get_val(row, "Num2")
+
+        # Round and compute net for each day
+        for day_str, v in days.items():
+            imp = round(v["import"], 4)
+            exp = round(v["export"], 4)
+            days[day_str] = {
+                "import": imp,
+                "export": exp,
+                "net": round(imp - exp, 4),
+            }
+
+        self._days = days
+
+        # State = latest complete day's net value
+        if days:
+            latest_day = sorted(days.keys())[-1]
+            self._attr_native_value = days[latest_day]["net"]
+            self.async_write_ha_state()
+
+
 class EonOutageSensor(EonBaseSensor):
     """Sensor to detect power outages (gaps > 15 min)."""
     
@@ -581,7 +643,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.13",
+            sw_version="1.0.14",
         )
 
     @property
