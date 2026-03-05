@@ -1,96 +1,308 @@
 # E.ON Meter Data for Home Assistant (ha-eon-meter)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
 
-Egy Home Assistant integráció (Custom Component) az E.ON okos fogyasztásmérők (Smart Meter) adatainak lekérdezésére és Home Assistantban történő megjelenítésére.
+Egy Home Assistant integráció (Custom Component) az E.ON okos fogyasztásmérők (Smart Meter) adatainak lekérdezésére és megjelenítésére — IMAP e-mail fiókból és/vagy helyi API-n keresztül.
 
-## 🌟 Funkciók / Features
+---
 
-- **Több adatforrás támogatása (Hibrid működés):**
+## 🌟 Funkciók
+
+- **Több adatforrás (Hibrid működés):**
+  - **Email (IMAP) mód:** Az E.ON által küldött hivataos Excel (`.xlsx`) fájlok automatikus letöltése és feldolgozása e-mail fiókból.
   - **API mód:** Adatok lekérdezése helyi vagy távoli API-n keresztül JSON formátumban.
-  - **Email (IMAP) mód:** Az E.ON által küldött hivatalos Excel (`.xlsx`) fájlok automatikus letöltése és feldolgozása email fiókból.
-  - **Hibrid mód:** Mindkét forrás egyidejű használata okos adategyesítéssel, deduplikációval és utólagos adatpótlással (backfill), ha az eredeti adat 0 volt.
-- **Részletes Szenzorok:**
-  - `Total Import` / `Total Export` (Összesített adatok)
-  - Napi (`Daily`), Heti (`Weekly`) és Havi (`Monthly`) import és export fogyasztás, amik a megfelelő ciklus végén automatikusan nullázódnak.
-  - `Last Outage` (Utolsó áramszünet ideje): Automatikusan detektálja, ha 15 percnél hosszabb adatkimaradás volt.
-- **Nyers Adatok Tárolása:** A Total szenzorok `measurements` attribútumában a legutóbbi ~1 hét (~672 mérési pont) teljes adatsora megőrzésre kerül további grafikonos feldolgozáshoz (pl. Markdown, ApexCharts stb.).
+  - **Hibrid mód:** Mindkét forrás egyidejű használata okos adategyesítéssel, deduplikációval és utólagos adatpótlással (backfill).
+- **25 szenzor entitás:**
+  - Napi / Heti / Havi import és export fogyasztás
+  - Import / Export összesített (Total) számláló
+  - Mérőóra OBIS állások (Import, Export, T1, T2)
+  - Csúcsteljesítmény T1 / T2
+  - Reaktív energia (import/export napi)
+  - Napi nettó egyenleg, Napi csúcsterhelés
+  - Önellátási arány (%)
+  - Becsült napi költség (Ft)
+  - Napi fogyasztás bontás (attribútumban napi bontás)
+  - Utolsó kiesés, API/IMAP státusz, Utolsó lekérdezés, Utolsó adat időbélyege
+- **Adattárolás:** Feldolgozott adatok perzisztensen tárolódnak — HA újraindítás után sem vész el a buffer.
+- **E-mail utófeldolgozás:** Feldolgozás után a levél megtartható, törölhető vagy egy másik IMAP-mappába helyezhető.
+- **Újrakonfigurálás:** Minden beállítás (e-mail szerver, villanydíj, levél sorsa, frissítési időköz) módosítható újraindítás nélkül a Configure gombbal.
 
-## 📥 Telepítés (Installation)
+---
 
-### 1. Telepítés HACS használatával (Ajánlott)
+## 📥 Telepítés
 
-Ez az integráció egyelőre egyedi (Custom) tárolóként adható hozzá a HACS-hez.
+### HACS (ajánlott)
 
-1. Nyisd meg a Home Assistantban a **HACS** menüpontot.
-2. Kattints a jobb felső sarokban a `...` (három pont) ikonra, majd válaszd a **Custom repositories** (Egyéni tárolók) lehetőséget.
-3. A *Repository* mezőbe másold be ezt az URL-t: 
-   `https://github.com/Aiasz/ha-eon-meter`
-4. A *Category* legördülő menüben válaszd az **Integration** típust.
-5. Kattints az **Add** (Hozzáadás) gombra.
-6. A listában megjelenő *E.ON Meter Data* kártyánál kattints a **Download** (Telepítés) gombra.
-7. Indítsd újra (Restart) a Home Assistantot!
+1. HACS → Integrations → `...` → **Custom repositories**
+2. URL: `https://github.com/Aiasz/ha-eon-meter` — kategória: **Integration**
+3. Telepítés után indítsd újra a HA-t
 
-### 2. Manuális telepítés
+### Manuális
 
-1. Töltsd le az integrációt innen a GitHub-ról (`Code` -> `Download ZIP`).
-2. Másold be a `custom_components/eon_meter` mappát a Home Assistantod `config/custom_components` mappájába.
-3. Indítsd újra (Restart) a Home Assistantot!
+1. Töltsd le (`Code` → `Download ZIP`)
+2. Másold a `custom_components/eon_meter` mappát a HA `config/custom_components/` könyvtárába
+3. Indítsd újra a HA-t
 
-## ⚙️ Beállítás (Configuration)
+---
 
-Az integráció a Home Assistant felületén keresztül konfigurálható.
+## ⚙️ Beállítás
 
-1. Lépj ide: **Beállítások** (Settings) -> **Eszközök és szolgáltatások** (Devices & Services).
-2. Kattints a jobb alsó sarokban az **Integráció hozzáadása** (Add Integration) gombra.
-3. Keresd meg és válaszd ki az **E.ON Meter Data** lehetőséget.
-4. Válaszd ki az adatforrást (*Adatforrás*):
-   - **API Only**: Csak a helyi API lekérdezése.
-   - **Email Only**: Csak az E.ON által küldött Excel fájlok feldolgozása IMAP-on keresztül.
-   - **Both (API + Email)**: A kettő kombinációja.
-5. Töltsd ki a kért adatokat (A kiválasztott módtól függően az API Token és az IMAP beállítások is felugranak). Példa az Email konfigurációhoz:
-   - **Host:** `outlook.office365.com` / stb.
-   - **Port:** Általában `993`.
-   - **Tárgy szűrő (Subject):** A keresendő vizsgált levél tárgyának egy része (pl. `EON` vagy `W1000-EON`).
+Settings → Devices & Services → **Add Integration** → *E.ON Meter Data*
 
-## � E-mail feldolgozás – levél sorsa
-
-A beállításokban (Configure gomb) megadható, hogy mi történjen az e-maillel feldolgozás után:
+1. **Adatforrás** kiválasztása: `Email`, `API`, vagy `API & Email`
+2. **E-mail beállítások** (IMAP mód esetén):
+   - Host: pl. `imap.gmail.com` vagy `outlook.office365.com`
+   - Port: `993` (SSL)
+   - Tárgy szűrő: a levél tárgya, pl. `Villanyóra Smart Meter Adatok`
+3. **E-mail levél sorsa** feldolgozás után:
 
 | Beállítás | Leírás |
 |-----------|--------|
-| `keep` | Megőrzés — a levél bent marad a beérkező levelek közt |
-| `delete` | Törlés — az integráció véglegesen törli a levelet |
-| `move` | Áthelyezés — a megadott IMAP-mappába (pl. `Archív`) kerül; ha a mappa nem létezik, az integráció létrehozza |
+| `keep` | Megőrzés — bent marad a beérkező levelek közt |
+| `delete` | Törlés — véglegesen törli a levelet |
+| `move` | Áthelyezés — a megadott IMAP-mappába kerül (alapból: `Archív`); ha nem létezik, az integráció létrehozza |
 
-A beállítás az **OptionsFlow**-ban (Settings → Devices & Services → E.ON Meter → Configure) módosítható, újraindítás nélkül érvényes.
+4. **Villanydíj** (Ft/kWh): a becsült napi költség kiszámításához
+5. **Frissítési időköz** (másodperc): pl. `3600` = 1 óra
+
+> Beállítások bármikor módosíthatók: Settings → Devices & Services → E.ON Meter → **Configure** (újraindítás nélkül)
+
+---
+
+## 📊 Szenzor lista
+
+| Entitás | Leírás |
+|---------|--------|
+| `sensor.e_on_meter_import_daily` | Import fogyasztás – mai nap (kWh) |
+| `sensor.e_on_meter_export_daily` | Export termelés – mai nap (kWh) |
+| `sensor.e_on_meter_import_weekly` | Import – ezen a héten (kWh) |
+| `sensor.e_on_meter_export_weekly` | Export – ezen a héten (kWh) |
+| `sensor.e_on_meter_import_monthly` | Import – ebben a hónapban (kWh) |
+| `sensor.e_on_meter_export_monthly` | Export – ebben a hónapban (kWh) |
+| `sensor.e_on_meter_import_total` | Import összesített számláló (kWh) |
+| `sensor.e_on_meter_export_total` | Export összesített számláló (kWh) |
+| `sensor.e_on_meter_napi_netto_egyenleg` | Import − Export egyenleg aznap (kWh) |
+| `sensor.e_on_meter_napi_csucsterheles` | Napi csúcsterhelés (kW) |
+| `sensor.e_on_meter_onellatasi_arany` | Önellátási arány (%) |
+| `sensor.e_on_meter_becsult_napi_koltseg` | Becsült napi villanyszámla (Ft) |
+| `sensor.e_on_meter_napi_fogyasztas_bontas` | Napi import/export bontás (attribútumban) |
+| `sensor.e_on_meter_meroora_import_allas` | OBIS mérőóra import állás (kWh) |
+| `sensor.e_on_meter_meroora_export_allas` | OBIS mérőóra export állás (kWh) |
+| `sensor.e_on_meter_meroora_t1_import_allas` | OBIS T1 tarifa import állás (kWh) |
+| `sensor.e_on_meter_meroora_t2_import_allas` | OBIS T2 tarifa import állás (kWh) |
+| `sensor.e_on_meter_csucsteljesitmeny_t1` | Csúcsteljesítmény T1 (kW) |
+| `sensor.e_on_meter_csucsteljesitmeny_t2` | Csúcsteljesítmény T2 (kW) |
+| `sensor.e_on_meter_import_reaktiv_daily` | Reaktív import energia – napi (kVArh) |
+| `sensor.e_on_meter_export_reaktiv_daily` | Reaktív export energia – napi (kVArh) |
+| `sensor.e_on_meter_last_outage` | Utolsó áramkimaradás időpontja |
+| `sensor.e_on_meter_api_imap_status` | Integráció státusz / utolsó hiba |
+| `sensor.e_on_meter_utolso_lekerdezes` | Következő lekérdezés ideje |
+| `sensor.e_on_meter_utolso_adat_idobelyege` | Legutóbb feldolgozott adat időbélyege |
+
+---
+
+## 🎨 Dashboard kártyák
+
+A `lovelace_cards.yaml` fájl 15 kész kártyát tartalmaz — egyenként illeszthetők be a dashboardba.
+
+**Beillesztés:** Dashboard → Add Card → Manual card → másold be a kártya YAML-ját.
+
+### Szükséges HACS frontend kiegészítők (opcionálisak)
+
+| Kiegészítő | HACS keresőnév | Kártyák amelyek használják |
+|------------|---------------|---------------------------|
+| mini-graph-card | `mini-graph-card` | 5, 6, 13 |
+| apexcharts-card | `apexcharts-card` | 10 |
+| Mushroom | `Mushroom` | 1, 2 |
+
+> A többi kártya (3, 4, 7, 8, 9, 11, 12, 14, 15) **beépített HA kártya** — semmit sem kell telepíteni hozzájuk.
+
+---
+
+### Kártya példák
+
+#### Státusz chip-sor
+```yaml
+type: custom:mushroom-chips-card
+chips:
+  - type: entity
+    entity: sensor.e_on_meter_api_imap_status
+    icon: mdi:check-network
+    icon_color: green
+  - type: entity
+    entity: sensor.e_on_meter_utolso_lekerdezes
+    icon: mdi:clock-sync-outline
+  - type: entity
+    entity: sensor.e_on_meter_utolso_adat_idobelyege
+    icon: mdi:database-clock-outline
+```
+
+#### Mai legfontosabb adatok
+```yaml
+type: glance
+title: "Mai adatok"
+show_name: true
+show_icon: true
+show_state: true
+entities:
+  - entity: sensor.e_on_meter_import_daily
+    name: "Import"
+    icon: mdi:transmission-tower-import
+  - entity: sensor.e_on_meter_export_daily
+    name: "Export"
+    icon: mdi:solar-power-variant
+  - entity: sensor.e_on_meter_napi_csucsterheles
+    name: "Csúcs"
+    icon: mdi:lightning-bolt-circle
+  - entity: sensor.e_on_meter_becsult_napi_koltseg
+    name: "Költség"
+    icon: mdi:cash
+```
+
+#### Import / Export – 7 napos trend
+```yaml
+type: custom:mini-graph-card
+title: "Import / Export – 7 nap"
+icon: mdi:chart-line
+hours_to_show: 168
+points_per_hour: 0.04
+line_width: 2
+smoothing: true
+show:
+  labels: false
+  points: false
+  legend: true
+  fill: true
+entities:
+  - entity: sensor.e_on_meter_import_daily
+    name: "Import"
+    color: "#e74c3c"
+  - entity: sensor.e_on_meter_export_daily
+    name: "Export"
+    color: "#2ecc71"
+```
+
+#### Napi nettó egyenleg – 14 napos trend
+```yaml
+type: custom:mini-graph-card
+title: "Napi Nettó Egyenleg – 14 nap"
+icon: mdi:scale-balance
+hours_to_show: 336
+points_per_hour: 0.03
+line_width: 2
+smoothing: true
+color_thresholds:
+  - value: -999
+    color: "#2ecc71"
+  - value: 0
+    color: "#e74c3c"
+show:
+  fill: true
+  extrema: true
+  labels: true
+  legend: false
+entities:
+  - entity: sensor.e_on_meter_napi_netto_egyenleg
+    name: "Nettó egyenleg"
+```
+
+#### Önellátási arány – Gauge
+```yaml
+type: gauge
+title: "Önellátási Arány"
+entity: sensor.e_on_meter_onellatasi_arany
+unit: "%"
+min: 0
+max: 100
+needle: true
+severity:
+  green: 60
+  yellow: 30
+  red: 0
+```
+
+#### Összesítő táblázat
+```yaml
+type: entities
+title: "Összesítő"
+show_header_toggle: false
+entities:
+  - entity: sensor.e_on_meter_import_daily
+    name: "Import – ma"
+    icon: mdi:transmission-tower-import
+  - entity: sensor.e_on_meter_export_daily
+    name: "Export – ma"
+    icon: mdi:solar-power-variant
+  - type: divider
+  - entity: sensor.e_on_meter_import_weekly
+    name: "Import – ezen a héten"
+  - entity: sensor.e_on_meter_export_weekly
+    name: "Export – ezen a héten"
+  - type: divider
+  - entity: sensor.e_on_meter_import_monthly
+    name: "Import – ebben a hónapban"
+  - entity: sensor.e_on_meter_export_monthly
+    name: "Export – ebben a hónapban"
+  - type: divider
+  - entity: sensor.e_on_meter_import_total
+    name: "Import összesen"
+    icon: mdi:counter
+  - entity: sensor.e_on_meter_export_total
+    name: "Export összesen"
+    icon: mdi:counter
+  - type: divider
+  - entity: sensor.e_on_meter_becsult_napi_koltseg
+    name: "Becsült napi költség"
+    icon: mdi:cash-clock
+```
+
+#### Havi statisztika – oszlopdiagram (beépített)
+```yaml
+type: statistics-graph
+title: "Havi Import vs Export"
+chart_type: bar
+period: month
+stat_types:
+  - max
+entities:
+  - entity: sensor.e_on_meter_import_monthly
+    name: "Import (havi)"
+  - entity: sensor.e_on_meter_export_monthly
+    name: "Export (havi)"
+```
+
+> Az összes kártya YAML-ja megtalálható a repóban: [`lovelace_cards.yaml`](lovelace_cards.yaml)
 
 ---
 
 ## 🕓 Verziótörténet
 
+### v1.2.0 (2026-03-05)
+- 📊 **Dashboard kártyák**: `lovelace_cards.yaml` — 15 kész kártya a repóban, egyenként beilleszthető
+- 📋 **Teljes szenzor lista** a README-ben, valós entity ID-kkal (`sensor.e_on_meter_*`)
+- 📖 **README átírva**: telepítés, beállítás, szenzor lista, kártya példák, verziótörténet
+
 ### v1.1.0 (2026-03-05)
-- 🗂️ **Brand ikonok javítva**: az ikonok és logók mostantól a `brand/` almappában vannak (HACS / HA 2024+ spec szerint)
-- 🖼️ **SVG ikonok hozzáadva**: `brand/icon.svg` és `brand/logo.svg` vektoros változatok
-- 🌍 **Fordítási fájlok**: `strings.json`, `translations/hu.json`, `translations/en.json` — a config flow mezők mostantól olvasható magyarul/angolul jelennek meg
-- 📬 **E-mail levél sorsa** (keep/delete/move): már a telepítési varázslóban és az OptionsFlow-ban is megadható, megfelelő leírásokkal
-- 🔄 **Automatikus újratöltés**: ha a beállításokban (Configure) módosítasz valamit (pl. email_action, villanydíj, scan_interval), az integráció automatikusan újratölti magát — nem kell kézzel újraindítani
-- 🔢 **make_assets.py** frissítve: a `brand/` almappába generál, SVG állományokat is előállít
-- Készítő: Aiasz
+- 🗂️ **Brand ikonok**: `brand/` almappába kerültek (HACS / HA 2024+ spec)
+- 🖼️ **SVG ikonok** hozzáadva: `brand/icon.svg`, `brand/logo.svg`
+- 🌍 **Fordítási fájlok**: `strings.json`, `translations/hu.json`, `translations/en.json`
+- 📬 **E-mail levél sorsa** (keep/delete/move): telepítési varázslóban és OptionsFlow-ban is beállítható
+- 🔄 **Automatikus újratöltés**: Configure után nem kell kézzel újraindítani a HA-t
+- 🔢 **make_assets.py** frissítve: `brand/` mappába generál, SVG-t is előállít
 
 ### v1.0.21
-- Duplikált ConfigFlow javítva, brand ikon PNG, sw_version button.py, tariff az OptionsFlow-ban
+- Duplikált ConfigFlow javítva, brand ikon PNG, sw_version, tariff az OptionsFlow-ban
 
 ### v1.0.20
-- Új szenzorok (csúcsteljesítmény, önellátási arány, becsült napi költség), T1/T2 OBIS, logó eszközök
+- Új szenzorok (csúcsteljesítmény, önellátási arány, becsült napi költség), T1/T2 OBIS
 
 ### v1.0.18
-- E-mail áthelyezés/törlés funkció, 2 új időbélyeg szenzor, OptionsFlow bevezetése
+- E-mail áthelyezés/törlés, 2 új időbélyeg szenzor, OptionsFlow bevezetése
 
 ---
 
-## �👨‍💻 Készítő
+## 👨‍💻 Készítő
 
 Készítette: **@Aiasz**
 
