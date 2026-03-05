@@ -3,3 +3,5 @@ __pycache__/
 *.py[cod]
 *.pycache
 .DS_Store
+
+*.xlsx
