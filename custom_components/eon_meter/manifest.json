@@ -1,7 +1,7 @@
 {
   "domain": "eon_meter",
   "name": "E.ON Meter Data",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "documentation": "https://github.com/Aiasz/ha-eon-meter",
   "issue_tracker": "https://github.com/Aiasz/ha-eon-meter/issues",
   "requirements": [
