@@ -1,7 +1,8 @@
 # E.ON Meter Data for Home Assistant (ha-eon-meter)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
+[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg?style=for-the-badge)](LICENSE)
 
 Egy Home Assistant integráció (Custom Component) az E.ON okos fogyasztásmérők (Smart Meter) adatainak lekérdezésére és megjelenítésére — IMAP e-mail fiókból és/vagy helyi API-n keresztül.
 
@@ -299,6 +300,26 @@ entities:
 
 ### v1.0.18
 - E-mail áthelyezés/törlés, 2 új időbélyeg szenzor, OptionsFlow bevezetése
+
+---
+
+## 📜 Licenc
+
+Ez a projekt a **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** licenc alatt áll.
+
+| Szabad | Feltétele |
+|--------|-----------|
+| ✅ Szabad felhasználás és módosítás | Hivatkozás az eredeti projektre kötelező |
+| ✅ Terjesztés és megosztás | El kell tüntetni az eredeti szerzőt (`Aiasz / ha-eon-meter`) |
+| ✅ Ingyenes személyes / otthoni használatra | — |
+| ❌ Kereskedelmi felhasználásra **nem** ingyenes | Kereskedelmi célra külön engedély szükséges |
+
+**Hivatkozás formátuma:**
+```
+Alapja: ha-eon-meter by Aiasz — https://github.com/Aiasz/ha-eon-meter
+```
+
+[Teljes licencszöveg (LICENSE)](LICENSE) · [CC BY-NC 4.0 összefoglaló](https://creativecommons.org/licenses/by-nc/4.0/)
 
 ---
 
