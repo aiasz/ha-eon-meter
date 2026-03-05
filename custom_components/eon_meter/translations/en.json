@@ -1,0 +1,79 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "E.ON Meter – Data Source",
+        "data": {
+          "data_source": "Data source",
+          "scan_interval": "Polling interval (seconds)"
+        },
+        "data_description": {
+          "data_source": "Choose where to read meter readings from: e-mail attachment, API, or both.",
+          "scan_interval": "How often (in seconds) to check for new data (e.g. 3600 = 1 hour)."
+        }
+      },
+      "api": {
+        "title": "E.ON Meter – API Settings",
+        "data": {
+          "url": "API URL",
+          "token": "API token"
+        }
+      },
+      "email": {
+        "title": "E.ON Meter – E-mail Settings",
+        "data": {
+          "imap_host": "IMAP server",
+          "imap_port": "IMAP port",
+          "imap_user": "E-mail address",
+          "imap_pass": "Password",
+          "email_subject": "E-mail subject (filter)",
+          "email_action": "After processing, the e-mail…",
+          "email_move_folder": "Target folder (for move action)",
+          "tariff_price": "Electricity tariff (HUF/kWh)"
+        },
+        "data_description": {
+          "imap_host": "IMAP server hostname, e.g. imap.gmail.com",
+          "imap_port": "Usually 993 (SSL).",
+          "email_subject": "Only messages whose subject contains this text will be processed.",
+          "email_action": "\"keep\" = leave in inbox; \"delete\" = permanently delete; \"move\" = move to specified IMAP folder.",
+          "email_move_folder": "IMAP folder name, e.g. Archive. The folder will be created if it does not exist.",
+          "tariff_price": "Indicative electricity price (HUF/kWh) used for estimated daily cost calculation."
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This E.ON Meter configuration has already been added."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "E.ON Meter – Edit Settings",
+        "data": {
+          "imap_host": "IMAP server",
+          "imap_port": "IMAP port",
+          "imap_user": "E-mail address",
+          "imap_pass": "Password (leave blank to keep current)",
+          "email_subject": "E-mail subject (filter)",
+          "scan_interval": "Polling interval (seconds)",
+          "email_action": "After processing, the e-mail…",
+          "email_move_folder": "Target folder (for move action)",
+          "tariff_price": "Electricity tariff (HUF/kWh)"
+        },
+        "data_description": {
+          "email_action": "keep = leave in inbox · delete = permanently delete · move = move to specified folder",
+          "email_move_folder": "IMAP folder name, e.g. Archive — created automatically if it does not exist."
+        }
+      }
+    }
+  },
+  "selector": {
+    "email_action": {
+      "options": {
+        "keep": "Keep (leave in inbox)",
+        "delete": "Delete (permanently remove)",
+        "move": "Move (to the specified IMAP folder)"
+      }
+    }
+  }
+}

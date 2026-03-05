@@ -1,7 +1,7 @@
 # E.ON Meter Data for Home Assistant (ha-eon-meter)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/integration)
-[![Version](https://img.shields.io/badge/version-1.0.19-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg?style=for-the-badge)](https://github.com/Aiasz/ha-eon-meter)
 
 Egy Home Assistant integráció (Custom Component) az E.ON okos fogyasztásmérők (Smart Meter) adatainak lekérdezésére és Home Assistantban történő megjelenítésére.
 
@@ -54,7 +54,43 @@ Az integráció a Home Assistant felületén keresztül konfigurálható.
    - **Port:** Általában `993`.
    - **Tárgy szűrő (Subject):** A keresendő vizsgált levél tárgyának egy része (pl. `EON` vagy `W1000-EON`).
 
-## 👨‍💻 Készítő
+## � E-mail feldolgozás – levél sorsa
+
+A beállításokban (Configure gomb) megadható, hogy mi történjen az e-maillel feldolgozás után:
+
+| Beállítás | Leírás |
+|-----------|--------|
+| `keep` | Megőrzés — a levél bent marad a beérkező levelek közt |
+| `delete` | Törlés — az integráció véglegesen törli a levelet |
+| `move` | Áthelyezés — a megadott IMAP-mappába (pl. `Archív`) kerül; ha a mappa nem létezik, az integráció létrehozza |
+
+A beállítás az **OptionsFlow**-ban (Settings → Devices & Services → E.ON Meter → Configure) módosítható, újraindítás nélkül érvényes.
+
+---
+
+## 🕓 Verziótörténet
+
+### v1.1.0 (2026-03-05)
+- 🗂️ **Brand ikonok javítva**: az ikonok és logók mostantól a `brand/` almappában vannak (HACS / HA 2024+ spec szerint)
+- 🖼️ **SVG ikonok hozzáadva**: `brand/icon.svg` és `brand/logo.svg` vektoros változatok
+- 🌍 **Fordítási fájlok**: `strings.json`, `translations/hu.json`, `translations/en.json` — a config flow mezők mostantól olvasható magyarul/angolul jelennek meg
+- 📬 **E-mail levél sorsa** (keep/delete/move): már a telepítési varázslóban és az OptionsFlow-ban is megadható, megfelelő leírásokkal
+- 🔄 **Automatikus újratöltés**: ha a beállításokban (Configure) módosítasz valamit (pl. email_action, villanydíj, scan_interval), az integráció automatikusan újratölti magát — nem kell kézzel újraindítani
+- 🔢 **make_assets.py** frissítve: a `brand/` almappába generál, SVG állományokat is előállít
+- Készítő: Aiasz
+
+### v1.0.21
+- Duplikált ConfigFlow javítva, brand ikon PNG, sw_version button.py, tariff az OptionsFlow-ban
+
+### v1.0.20
+- Új szenzorok (csúcsteljesítmény, önellátási arány, becsült napi költség), T1/T2 OBIS, logó eszközök
+
+### v1.0.18
+- E-mail áthelyezés/törlés funkció, 2 új időbélyeg szenzor, OptionsFlow bevezetése
+
+---
+
+## �👨‍💻 Készítő
 
 Készítette: **@Aiasz**
 
