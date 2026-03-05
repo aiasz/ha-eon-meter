@@ -11,6 +11,5 @@
   "dependencies": [],
   "codeowners": ["@Aiasz"],
   "config_flow": true,
-  "iot_class": "local_polling",
-  "icon": "mdi:lightning-bolt"
+  "iot_class": "local_polling"
 }
