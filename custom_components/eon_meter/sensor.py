@@ -33,16 +33,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
         EonNetBalanceSensor(coordinator, "Napi Netto Egyenleg"),
         # --- Napi bontás (minden nap import/export/net a bufferből) ---
         EonDailyBreakdownSensor(coordinator, "Napi Fogyasztás Bontás"),
-        # --- Mérőóra tényleges állása (OBIS kumulatív — jelenleg 0, disabled by default) ---
+        # --- Mérőóra tényleges állása (OBIS kumulatív) ---
         EonObisLatestSensor(coordinator, "1-1:1.8.0*0", "Mérőóra Import Állás",
-                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING,
-                            enabled_by_default=False),
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
         EonObisLatestSensor(coordinator, "1-1:2.8.0*0", "Mérőóra Export Állás",
-                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING,
-                            enabled_by_default=False),
-        # --- Reaktív energia (napi összeg — jelenleg 0, disabled by default) ---
-        EonDailySensor(coordinator, "reaktiv_import", "+R",   "Import Reaktiv Daily",  enabled_by_default=False),
-        EonDailySensor(coordinator, "reaktiv_export", "-R",   "Export Reaktiv Daily",  enabled_by_default=False),
+                            SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+        # --- Reaktív energia (napi összeg) ---
+        EonDailySensor(coordinator, "reaktiv_import", "+R",   "Import Reaktiv Daily"),
+        EonDailySensor(coordinator, "reaktiv_export", "-R",   "Export Reaktiv Daily"),
         # --- Időbélyeg szenzorok ---
         EonLastFetchSensor(coordinator, "Utolsó Lekérdezés"),
         EonLastDataSensor(coordinator, "Utolsó Adat Időbélyege"),
@@ -82,7 +80,7 @@ class EonBaseSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.18",
+            sw_version="1.0.19",
         )
 
     async def async_added_to_hass(self):
@@ -752,7 +750,7 @@ class EonStatusSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.18",
+            sw_version="1.0.19",
         )
 
     @property
@@ -789,7 +787,7 @@ class EonLastFetchSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.18",
+            sw_version="1.0.19",
         )
 
     def _handle_coordinator_update(self) -> None:
@@ -827,7 +825,7 @@ class EonLastDataSensor(CoordinatorEntity, SensorEntity):
             name=f"E.ON Meter {pod}",
             manufacturer="E.ON",
             model="Smart Meter API",
-            sw_version="1.0.18",
+            sw_version="1.0.19",
         )
 
     def _handle_coordinator_update(self) -> None:
